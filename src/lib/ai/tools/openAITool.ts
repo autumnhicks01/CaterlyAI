@@ -1,5 +1,5 @@
 import { createTool } from 'ai'
-import OpenAI from 'openai'
+import { openai } from '@ai-sdk/openai'
 import { EnrichmentInput, EnrichmentResponse } from '@/types/business'
 
 export const openAIEnrichmentTool = createTool({
@@ -17,10 +17,7 @@ export const openAIEnrichmentTool = createTool({
   },
   execute: async ({ name, address, phone, website }: EnrichmentInput): Promise<EnrichmentResponse> => {
     try {
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-      
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+      const completion = await openai('gpt-4o-mini').chat({
         messages: [
           {
             role: "system",
@@ -42,10 +39,11 @@ export const openAIEnrichmentTool = createTool({
               Format as JSON with fields: website, description, phoneNumber, hasEventSpace`
           }
         ],
-        response_format: { type: "json_object" }
-      })
+        format: 'json'
+      });
       
-      const result = JSON.parse(completion.choices[0].message.content) as EnrichmentResponse
+      // Parse the result from the model
+      const result = completion.choices[0]?.json as EnrichmentResponse;
       
       return {
         ...result,

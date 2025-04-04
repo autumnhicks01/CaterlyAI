@@ -1,4 +1,4 @@
-import { createServerClient } from '@supabase/ssr'
+import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type Database } from '@/types/supabase'
 
@@ -13,14 +13,25 @@ export function createClient() {
     supabaseKey,
     {
       cookies: {
-        get(name) {
-          return cookieStore.get(name)?.value
+        get(name: string) {
+          const cookie = cookieStore.get(name)
+          return cookie?.value
         },
-        set(name, value, options) {
-          cookieStore.set({ name, value, ...options })
+        set(name: string, value: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value, ...options })
+          } catch (error) {
+            // This can fail in middleware as cookies is read-only
+            console.warn('Warning: Could not set cookie', error)
+          }
         },
-        remove(name, options) {
-          cookieStore.set({ name, value: '', ...options })
+        remove(name: string, options: CookieOptions) {
+          try {
+            cookieStore.set({ name, value: '', ...options })
+          } catch (error) {
+            // This can fail in middleware as cookies is read-only
+            console.warn('Warning: Could not delete cookie', error)
+          }
         },
       },
     }

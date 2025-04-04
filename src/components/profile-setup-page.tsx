@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useAuth } from "@/app/context/auth-context"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { userProfileService } from "@/services/userProfileService"
 
 // Define location type with coordinates
 interface Location {
@@ -66,13 +67,103 @@ export default function ProfileSetupPage() {
     modelUsed: string;
   } | null>(null)
   
+  // Track if we're editing an existing profile
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [existingProfileId, setExistingProfileId] = useState<string | null>(null)
+  
   // Reference for place autocomplete
   const placeAutocompleteRef = useRef<HTMLDivElement>(null)
   const [placesLoaded, setPlacesLoaded] = useState(false)
 
   useEffect(() => {
     setMounted(true)
-  }, [])
+    
+    // Check if a profile already exists and load it if so
+    const checkForExistingProfile = async () => {
+      try {
+        if (!user) return;
+        
+        const response = await fetch('/api/profile/current', {
+          credentials: 'include' // Include cookies in the request
+        });
+        if (!response.ok) {
+          console.error('Error checking for profile:', await response.text());
+          return;
+        }
+        
+        const data = await response.json();
+        
+        // If there's an authenticated user with a profile, populate the form
+        if (data.authenticated && data.profile) {
+          setIsEditMode(true);
+          setExistingProfileId(data.profile.id);
+          
+          const profile = data.profile;
+          
+          // Populate the form fields with the existing data
+          setBusinessName(profile.business_name || '');
+          setLocation({
+            address: profile.full_address || '',
+            coordinates: profile.user_input_data?.coordinates || null
+          });
+          
+          if (profile.delivery_radius) {
+            setServiceRadius(String(profile.delivery_radius));
+          }
+          
+          if (profile.contact_phone) {
+            setOwnerContact(profile.contact_phone);
+          }
+          
+          // Handle photos - first from user_input_data, fallback to root level
+          const photoUrls = profile.user_input_data?.photo_urls || profile.photo_urls;
+          if (photoUrls && Array.isArray(photoUrls)) {
+            const existingPhotos = [...photos];
+            photoUrls.forEach((url: string, index: number) => {
+              if (index < existingPhotos.length) {
+                existingPhotos[index] = url;
+              }
+            });
+            setPhotos(existingPhotos);
+          }
+          
+          if (profile.business_type) {
+            setFocus(profile.business_type);
+          }
+          
+          if (profile.website_url) {
+            const isOrderingLink = profile.website_url.includes('order') || 
+                                  profile.website_url.includes('delivery');
+            if (isOrderingLink) {
+              setOrderingLink(profile.website_url);
+            } else {
+              setMenuLink(profile.website_url);
+            }
+          }
+          
+          // Handle user_input_data if it exists
+          if (profile.user_input_data) {
+            const userData = profile.user_input_data;
+            
+            if (userData.yearsInOperation) setYearsInOperation(userData.yearsInOperation);
+            if (userData.idealClients) setIdealClients(userData.idealClients);
+            if (userData.cuisineSpecialties) setCuisineSpecialties(userData.cuisineSpecialties);
+            if (userData.uniqueSellingPoints) setUniqueSellingPoints(userData.uniqueSellingPoints);
+            if (userData.eventSizes) setEventSizes(userData.eventSizes);
+            if (userData.serviceTypes) setServiceTypes(userData.serviceTypes);
+            if (userData.customizationOptions) setCustomizationOptions(userData.customizationOptions);
+            if (userData.managerContact) setManagerContact(userData.managerContact);
+          }
+          
+          console.log('Loaded existing profile data');
+        }
+      } catch (error) {
+        console.error('Error loading existing profile:', error);
+      }
+    };
+    
+    checkForExistingProfile();
+  }, [user, photos])
   
   // Initialize Google Places once the script loads
   useEffect(() => {
@@ -85,114 +176,88 @@ export default function ProfileSetupPage() {
   const initPlacesAutocomplete = async () => {
     try {
       if (window.google && placeAutocompleteRef.current) {
-        try {
-          // Attempt to use the newer PlaceAutocompleteElement
-          const { PlaceAutocompleteElement } = await window.google.maps.importLibrary("places")
-          
-          // Create the place autocomplete element
-          const placeAutocomplete = new PlaceAutocompleteElement({
-            types: ["address", "establishment", "geocode"]
-          })
-          
-          // Set the element id and styling to be very noticeable
-          placeAutocomplete.id = 'place-autocomplete-input'
-          placeAutocomplete.style.width = '100%'
-          placeAutocomplete.style.padding = '8px 12px'
-          placeAutocomplete.style.borderRadius = '6px'
-          placeAutocomplete.style.border = '1px solid rgb(229, 231, 235)'
-          placeAutocomplete.style.backgroundColor = 'white'
-          
-          // Clear any existing content and append the input
-          placeAutocompleteRef.current.innerHTML = ''
-          placeAutocompleteRef.current.appendChild(placeAutocomplete)
-          
-          // Add listener for place selection - use 'gmp-select' not 'gmp-placeselect'
-          placeAutocomplete.addEventListener('gmp-select', async ({ detail }: { detail: { placePrediction: any } }) => {
-            const { placePrediction } = detail
+        // Import the places library
+        await window.google.maps.importLibrary("places");
+        
+        // Create the place autocomplete element
+        // @ts-ignore
+        const placeAutocomplete = new window.google.maps.places.PlaceAutocompleteElement({
+          types: ["address", "establishment", "geocode"]
+        });
+        
+        // Set the element id and styling
+        placeAutocomplete.id = 'place-autocomplete-input';
+        placeAutocomplete.style.width = '100%';
+        placeAutocomplete.style.padding = '8px 12px';
+        placeAutocomplete.style.borderRadius = '6px';
+        placeAutocomplete.style.border = '1px solid rgb(229, 231, 235)';
+        placeAutocomplete.style.backgroundColor = 'white';
+        
+        // Clear any existing content and append the input
+        placeAutocompleteRef.current.innerHTML = '';
+        placeAutocompleteRef.current.appendChild(placeAutocomplete);
+        
+        // Add listener for place selection
+        // @ts-ignore
+        placeAutocomplete.addEventListener('gmp-select', async ({ placePrediction }) => {
+          try {
+            const place = placePrediction.toPlace();
             
-            try {
-              // Convert the prediction to a Place
-              const place = await placePrediction.toPlace()
-              
-              // Fetch additional fields
-              await place.fetchFields({ 
-                fields: ['displayName', 'formattedAddress', 'location'] 
-              })
-              
-              if (place.location) {
-                // Update location state with the selected place
-                setLocation({
-                  address: place.formattedAddress || place.displayName || '',
-                  coordinates: {
-                    lat: place.location.lat,
-                    lng: place.location.lng
-                  }
-                })
-                
-                console.log('Selected location:', place.formattedAddress || place.displayName)
-                console.log('Coordinates:', place.location.lat, place.location.lng)
-              }
-            } catch (error) {
-              console.error('Error processing place selection:', error)
-            }
-          })
-        } catch (error) {
-          console.warn('PlaceAutocompleteElement not available, falling back to legacy Autocomplete', error)
-          
-          // Fallback to legacy Autocomplete
-          // Create input element
-          const input = document.createElement('input')
-          input.placeholder = "Enter your business location"
-          input.className = "w-full px-3 py-2 bg-white text-gray-800 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-transparent placeholder:text-gray-600"
-          
-          // Clear any existing content and append the input
-          placeAutocompleteRef.current.innerHTML = ''
-          placeAutocompleteRef.current.appendChild(input)
-          
-          // Import the places library and initialize the legacy autocomplete
-          const { Autocomplete } = await window.google.maps.importLibrary("places")
-          
-          // Initialize the legacy autocomplete
-          const autocomplete = new Autocomplete(input, {
-            types: ["address", "establishment", "geocode"],
-            fields: ["formatted_address", "geometry"]
-          })
-          
-          // Add listener for place selection
-          autocomplete.addListener('place_changed', () => {
-            const place = autocomplete.getPlace()
+            // Fetch additional fields
+            await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
             
-            if (place.geometry && place.geometry.location) {
+            console.log('Selected Place:', JSON.stringify(place.toJSON(), null, 2));
+            
+            if (place.location) {
+              // Make sure coordinates are numbers
+              const lat = typeof place.location.lat === 'number' ? place.location.lat : parseFloat(place.location.lat);
+              const lng = typeof place.location.lng === 'number' ? place.location.lng : parseFloat(place.location.lng);
+              
+              // Update location state with the selected place
               setLocation({
-                address: place.formatted_address || '',
+                address: place.formattedAddress || place.displayName || '',
                 coordinates: {
-                  lat: place.geometry.location.lat(),
-                  lng: place.geometry.location.lng()
+                  lat,
+                  lng
                 }
-              })
+              });
               
-              console.log('Selected location (legacy):', place.formatted_address)
-              console.log('Coordinates (legacy):', place.geometry.location.lat(), place.geometry.location.lng())
+              console.log('Selected location:', place.formattedAddress || place.displayName);
+              console.log('Coordinates:', lat, lng);
             }
-          })
-        }
+          } catch (error) {
+            console.error('Error processing place selection:', error);
+          }
+        });
       }
     } catch (error) {
-      console.error('Error initializing Places Autocomplete:', error)
+      console.error('Error initializing Places Autocomplete:', error);
     }
   }
 
   const handlePhotoChange = (index: number, e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      const reader = new FileReader()
-      reader.onload = (event) => {
-        if (event.target?.result) {
-          const newPhotos = [...photos]
-          newPhotos[index] = event.target.result as string
-          setPhotos(newPhotos)
-        }
+      const file = e.target.files[0]
+      
+      // Check if file is too large
+      if (file.size > 2 * 1024 * 1024) {
+        alert("Image is too large. Please choose an image under 2MB.")
+        return
       }
-      reader.readAsDataURL(e.target.files[0])
+      
+      // Instead of storing the full data URL, we'll use a placeholder URL
+      // This would normally be where you'd upload the image to a storage service
+      const newPhotos = [...photos]
+      
+      // Create a temporary URL for the UI preview
+      const temporaryUrl = URL.createObjectURL(file)
+      newPhotos[index] = temporaryUrl
+      
+      // Update the photos state
+      setPhotos(newPhotos)
+      
+      // In a real implementation, you'd upload the image to a storage service here
+      // and then use the returned URL instead
     }
   }
 
@@ -241,6 +306,7 @@ export default function ProfileSetupPage() {
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include cookies in the request
         body: JSON.stringify({
           businessName,
           location: location.address,
@@ -408,23 +474,30 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
     }
     
     try {
+      // Process photos only once to ensure consistency
+      const processedPhotos = photos
+        .filter(photo => !photo.includes("placeholder.svg"))
+        .map(photo => {
+          // Any blob URLs should be replaced with placeholders
+          if (photo.startsWith('blob:') || photo.startsWith('data:')) {
+            return 'https://placehold.co/400x300?text=Image+URL+not+stored';
+          }
+          return photo;
+        })
+        .slice(0, 3); // Limit to 3 photos
+      
       // Prepare data for saving to Supabase
       const profileData = {
         business_name: businessName,
         full_address: location.address,
-        delivery_radius: serviceRadius ? parseInt(serviceRadius) : null,
+        delivery_radius: serviceRadius ? parseInt(serviceRadius) : 10,
         business_type: focus,
         contact_phone: ownerContact,
         website_url: menuLink || orderingLink,
-        photo_urls: photos.filter(photo => photo !== "/placeholder.svg?height=300&width=400"),
-        // Store coordinates directly in the user_input_data for better access
-        latitude: location.coordinates?.lat,
-        longitude: location.coordinates?.lng,
+        
+        // Store all data in user_input_data to ensure it's preserved
         user_input_data: {
-          businessName,
-          location: location.address,
           coordinates: location.coordinates,
-          serviceRadius,
           yearsInOperation,
           idealClients,
           cuisineSpecialties,
@@ -432,40 +505,42 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
           eventSizes,
           serviceTypes,
           customizationOptions,
-          ownerContact,
           managerContact,
-          menuLink,
-          orderingLink,
-          focus
+          photo_urls: processedPhotos // Store photos in user_input_data only
         },
         ai_profile_data: JSON.parse(localStorage.getItem('cateringProfile') || '{}').structuredProfile || null
       };
       
-      // Save profile to Supabase
+      console.log('Saving profile data:', profileData);
+      
+      // Save profile to Supabase with credentials included to send cookies
       const response = await fetch('/api/profile/save', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include', // Include cookies in the request
         body: JSON.stringify(profileData),
       });
       
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to save profile");
+        const errorText = await response.text();
+        console.error('Error response from server:', errorText);
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || "Failed to save profile");
+        } catch (e) {
+          throw new Error(`Failed to save profile: ${errorText}`);
+        }
       }
       
-      // Get the saved profile data with ID
+      // Get the saved profile data
       const savedProfile = await response.json();
       console.log('Profile saved successfully:', savedProfile);
       
-      if (savedProfile.profile?.id) {
-        // Navigate to the specific profile page using the ID
-        router.push(`/profile/${savedProfile.profile.id}`);
-      } else {
-        // Fallback to the main profile page (which will handle redirection)
-        router.push("/profile");
-      }
+      // Navigate to the profile page
+      router.push("/profile");
+      
     } catch (error) {
       console.error("Error saving profile:", error);
       alert("There was an error saving your profile. Please try again.");
@@ -500,8 +575,14 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
         <div className="absolute bottom-20 -left-20 w-96 h-96 bg-blue-500/5 rounded-full filter blur-3xl animate-pulse-slow animation-delay-700"></div>
         
         <div className="relative">
-          <h1 className="text-4xl font-bold mb-2 text-center gradient-text">Set Up Your Catering Profile</h1>
-          <p className="text-center text-foreground mb-8">Help us understand your business to generate better leads</p>
+          <h1 className="text-4xl font-bold mb-2 text-center gradient-text">
+            {isEditMode ? "Edit Your Catering Profile" : "Set Up Your Catering Profile"}
+          </h1>
+          <p className="text-center text-foreground mb-8">
+            {isEditMode 
+              ? "Update your business information to improve your leads" 
+              : "Help us understand your business to generate better leads"}
+          </p>
 
           <div className="max-w-4xl mx-auto">
             {!showPreview ? (
@@ -572,7 +653,7 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
                           </div>
                           {location.coordinates && (
                             <p className="text-xs text-green-600 mt-1">
-                              Location coordinates saved: {location.coordinates.lat.toFixed(6)}, {location.coordinates.lng.toFixed(6)}
+                              Location coordinates saved: {typeof location.coordinates.lat === 'number' ? location.coordinates.lat.toFixed(6) : location.coordinates.lat}, {typeof location.coordinates.lng === 'number' ? location.coordinates.lng.toFixed(6) : location.coordinates.lng}
                             </p>
                           )}
                         </div>
@@ -855,27 +936,10 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
                       </Button>
                     ) : (
                       <Button 
-                        onClick={generateAIProfile}
-                        className="ml-auto bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-ai-glow transition-all duration-300 transform hover:scale-105"
-                        size="lg"
+                        onClick={handleSave}
+                        className="ml-auto bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-ai-glow transition-all duration-300"
                       >
-                        <span className="mr-2">Generate AI Profile</span>
-                        <svg 
-                          xmlns="http://www.w3.org/2000/svg" 
-                          width="24" 
-                          height="24" 
-                          viewBox="0 0 24 24" 
-                          fill="none" 
-                          stroke="currentColor" 
-                          strokeWidth="2" 
-                          strokeLinecap="round" 
-                          strokeLinejoin="round" 
-                          className="h-4 w-4 sparkle"
-                        >
-                          <path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"></path>
-                          <path d="M9 18h6"></path>
-                          <path d="M10 22h4"></path>
-                        </svg>
+                        {isEditMode ? "Update Profile" : "Save Profile"}
                       </Button>
                     )}
                   </div>

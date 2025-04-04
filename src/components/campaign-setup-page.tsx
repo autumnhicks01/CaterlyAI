@@ -45,6 +45,18 @@ export default function CampaignSetupPage() {
   // Load initial values from profile
   useEffect(() => {
     if (profile) {
+      console.log("CampaignSetup: Profile data loaded:", {
+        location: profile.location,
+        full_address: profile.full_address,
+        service_radius: profile.service_radius,
+        user_input_data: profile.user_input_data
+      });
+      
+      // Set default radius from profile if available
+      if (profile.service_radius) {
+        setRadius(profile.service_radius.toString());
+      }
+      
       // Extract ideal customer type from profile and auto-select categories
       if (profile.idealClients) {
         // Auto-select categories based on profile information
@@ -80,15 +92,32 @@ export default function CampaignSetupPage() {
   };
 
   const handleContinue = () => {
-    setCampaign({
+    // Extract coordinates from profile.user_input_data if available
+    let coordinates = null;
+    if (profile?.user_input_data && 
+        typeof profile.user_input_data === 'object' && 
+        'coordinates' in profile.user_input_data && 
+        profile.user_input_data.coordinates) {
+      coordinates = profile.user_input_data.coordinates;
+      console.log("CampaignSetup: Found coordinates in profile:", coordinates);
+    } else {
+      console.log("CampaignSetup: No coordinates found in profile:", profile?.user_input_data);
+    }
+
+    // Set campaign data with all necessary information
+    const campaignData = {
       name: campaignName,
       eventType: "any",
-      location: profile?.location || "",
+      location: profile?.full_address || profile?.location || "",
       radius: Number.parseInt(radius),
-      targetCategories: selectedCategories
-    })
+      targetCategories: selectedCategories,
+      coordinates: coordinates
+    };
+    
+    console.log("CampaignSetup: Setting campaign data:", campaignData);
+    setCampaign(campaignData);
 
-    router.push("/leads/discovery")
+    router.push("/leads/discovery");
   }
 
   return (
@@ -141,6 +170,11 @@ export default function CampaignSetupPage() {
                     <InfoIcon className="h-4 w-4 text-blue-500" />
                     <AlertDescription className="ml-2">
                       We have your location set to {profile?.location || "[Your Location]"} and a {radius} mile radius from your company profile. Would you like to keep these, or make any changes?
+                      {profile?.user_input_data?.coordinates && (
+                        <div className="mt-2 text-xs text-blue-600">
+                          Coordinates: Lat {profile.user_input_data.coordinates.lat.toFixed(6)}, Lng {profile.user_input_data.coordinates.lng.toFixed(6)}
+                        </div>
+                      )}
                     </AlertDescription>
                   </Alert>
                   

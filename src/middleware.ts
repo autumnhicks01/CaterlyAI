@@ -12,47 +12,35 @@ export async function middleware(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
         cookies: {
-          get: (name) => req.cookies.get(name)?.value,
+          get: (name) => {
+            const cookies = req.cookies.getAll();
+            const cookie = cookies.find(cookie => cookie.name === name);
+            return cookie?.value;
+          },
           set: (name, value, options) => {
             res.cookies.set({
               name,
               value,
               ...options,
-            })
+            });
           },
           remove: (name, options) => {
             res.cookies.delete({
               name,
               ...options,
-            })
+            });
           },
         },
       }
     )
     
-    // Get the session first to maintain backward compatibility
-    const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+    // Get the session
+    const { data: { session } } = await supabase.auth.getSession()
     
-    if (sessionError) {
-      console.error('Session error in middleware:', sessionError)
-      // Continue as unauthenticated
-      return handleAuthFlow(req, res, false);
-    }
-    
-    // Securely authenticate the user with getUser() as recommended by Supabase
+    // Validate the session exists
     let isAuthenticated = false;
     if (session) {
-      try {
-        const { data: { user }, error: userError } = await supabase.auth.getUser();
-        if (userError) {
-          console.error('User error in middleware:', userError)
-          return handleAuthFlow(req, res, false);
-        }
-        isAuthenticated = !!user;
-      } catch (error) {
-        console.error('Error getting user in middleware:', error)
-        return handleAuthFlow(req, res, false);
-      }
+      isAuthenticated = true;
     }
     
     return handleAuthFlow(req, res, isAuthenticated);

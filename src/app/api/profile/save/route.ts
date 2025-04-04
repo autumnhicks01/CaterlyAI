@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase-server'
+import { createClient } from '@/utils/supabase/server'
 import { Database } from '@/types/supabase'
 
 export async function POST(request: NextRequest) {
   try {
+    // Use the createClient helper from utils/supabase/server instead of creating one here
     const supabase = createClient()
     
     // Get the current session
@@ -23,130 +24,98 @@ export async function POST(request: NextRequest) {
       }, { status: 401 })
     }
     
-    // Get the request body
-    const profileData = await request.json()
-    console.log('Received profile data:', JSON.stringify(profileData, null, 2))
-    
-    // Add user_id to the profile data
-    const dataWithUserId = {
-      ...profileData,
-      user_id: session.user.id
-    }
+    // Parse the request payload
+    const payload = await request.json()
     
     // Ensure required fields are present
-    if (!dataWithUserId.business_name) {
-      dataWithUserId.business_name = 'Unnamed Business'
-    }
-    
-    if (!dataWithUserId.full_address) {
+    if (!payload.business_name) {
       return NextResponse.json({ 
-        error: 'Address is required',
-        field: 'full_address'
+        error: 'Business name is required' 
       }, { status: 400 })
     }
     
-    // Store location coordinates in the user_input_data JSON field if they exist
-    if (dataWithUserId.user_input_data?.coordinates) {
-      // Make sure user_input_data exists
-      if (!dataWithUserId.user_input_data) {
-        dataWithUserId.user_input_data = {}
-      }
-      
-      // Save coordinates in a standardized location in the JSON structure
-      dataWithUserId.user_input_data.location_coordinates = dataWithUserId.user_input_data.coordinates
-      
-      // For easier access in search functions, store lat/lng at root level
-      dataWithUserId.latitude = dataWithUserId.user_input_data.coordinates.lat
-      dataWithUserId.longitude = dataWithUserId.user_input_data.coordinates.lng
-      
-      // Delete the coordinates from the root level to prevent database errors
-      delete dataWithUserId.coordinates
-    } else if (dataWithUserId.latitude && dataWithUserId.longitude) {
-      // If coordinates are provided at the root level, make sure they're also in user_input_data
-      if (!dataWithUserId.user_input_data) {
-        dataWithUserId.user_input_data = {}
-      }
-      
-      // Add coordinates to user_input_data
-      dataWithUserId.user_input_data.coordinates = {
-        lat: dataWithUserId.latitude,
-        lng: dataWithUserId.longitude
-      }
-      
-      dataWithUserId.user_input_data.location_coordinates = dataWithUserId.user_input_data.coordinates
+    // Check for location coordinates
+    if (!payload.user_input_data?.coordinates && !(payload.latitude && payload.longitude)) {
+      return NextResponse.json({ 
+        error: 'Location coordinates are required' 
+      }, { status: 400 })
     }
     
-    // Convert service radius to an integer if it's a string
-    if (dataWithUserId.delivery_radius && typeof dataWithUserId.delivery_radius === 'string') {
-      dataWithUserId.delivery_radius = parseInt(dataWithUserId.delivery_radius, 10)
+    // Set default service radius if not provided
+    if (!payload.delivery_radius) {
+      payload.delivery_radius = 10
     }
     
-    console.log('Attempting to save profile for user:', session.user.id)
+    // Initialize user_input_data if it doesn't exist
+    if (!payload.user_input_data) {
+      payload.user_input_data = {}
+    }
     
-    // First check if profile exists
-    const { data: existingProfile, error: fetchError } = await supabase
+    // Handle photo URLs - store them only in user_input_data
+    if (payload.photo_urls && Array.isArray(payload.photo_urls)) {
+      // Filter out any data URLs or blob URLs - only store actual URLs
+      const processedPhotoUrls = payload.photo_urls
+        .filter((url: string) => typeof url === 'string')
+        .map((url: string) => {
+          // Replace blob URLs and data URLs with placeholder
+          if (url.startsWith('blob:') || url.startsWith('data:')) {
+            return 'https://placehold.co/400x300?text=Image+URL+not+stored'
+          }
+          return url
+        })
+        .slice(0, 3) // Limit to 3 photos
+      
+      // Store in user_input_data
+      payload.user_input_data.photo_urls = processedPhotoUrls
+      
+      // Remove from root level to prevent database errors
+      delete payload.photo_urls
+    }
+    
+    // Move coordinates from root level to user_input_data if they exist
+    if (payload.latitude !== undefined && payload.longitude !== undefined) {
+      payload.user_input_data.coordinates = {
+        lat: payload.latitude,
+        lng: payload.longitude
+      }
+      
+      // Delete from root level to prevent database errors
+      delete payload.latitude
+      delete payload.longitude
+    }
+    
+    // Delete any root-level coordinates to prevent database errors
+    delete payload.coordinates
+    
+    const userId = session.user.id
+    
+    // Update the user profile in the database
+    const { data, error } = await supabase
       .from('user_profiles')
-      .select('id')
-      .eq('user_id', session.user.id)
-      .maybeSingle()
+      .upsert({
+        ...payload,
+        user_id: userId,
+        updated_at: new Date().toISOString()
+      })
+      .select()
     
-    if (fetchError) {
-      console.error('Error checking for existing profile:', fetchError)
+    if (error) {
+      console.error('Error saving profile:', error)
       return NextResponse.json({ 
-        error: 'Database error when checking for existing profile',
-        details: fetchError
+        error: 'Failed to save profile',
+        details: error 
       }, { status: 500 })
     }
-    
-    let result
-    
-    // If profile exists, update it
-    if (existingProfile?.id) {
-      console.log(`Updating existing profile with ID: ${existingProfile.id}`)
-      
-      // Use update for existing profiles
-      result = await supabase
-        .from('user_profiles')
-        .update(dataWithUserId)
-        .eq('id', existingProfile.id)
-        .select()
-        .single()
-    } else {
-      // Otherwise insert a new profile
-      console.log('Creating new profile')
-      result = await supabase
-        .from('user_profiles')
-        .insert(dataWithUserId)
-        .select()
-        .single()
-    }
-    
-    if (result.error) {
-      console.error('Error saving profile:', result.error)
-      return NextResponse.json({ 
-        error: 'Error saving profile',
-        details: result.error
-      }, { status: 500 })
-    }
-    
-    if (!result.data) {
-      console.error('No data returned from save operation')
-      return NextResponse.json({ 
-        error: 'No data returned from save operation'
-      }, { status: 500 })
-    }
-    
-    console.log('Profile saved successfully:', result.data.id)
     
     return NextResponse.json({ 
       success: true,
-      profile: result.data 
-    })
+      data 
+    }, { status: 200 })
   } catch (error) {
     console.error('Unexpected error saving profile:', error)
     return NextResponse.json({ 
-      error: 'Unexpected error',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      error: 'An unexpected error occurred',
+      details: error instanceof Error ? error.message : String(error)
     }, { status: 500 })
   }
 } 

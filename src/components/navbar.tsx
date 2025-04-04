@@ -27,7 +27,9 @@ export default function Navbar() {
       
       try {
         // Use fetch to get the profile ID since we're in a client component
-        const response = await fetch('/api/profile/current')
+        const response = await fetch('/api/profile/current', {
+          credentials: 'include' // Include cookies in the request
+        })
         const data = await response.json()
         
         if (data.profile?.id) {
@@ -93,6 +95,25 @@ export default function Navbar() {
       console.error('Error during logout:', error)
     }
   }
+
+  // Check if user has a profile
+  const checkUserHasProfile = async () => {
+    try {
+      const response = await fetch('/api/profile/current', {
+        credentials: 'include' // Include cookies in the request
+      });
+      
+      if (!response.ok) {
+        return false;
+      }
+      
+      const data = await response.json();
+      return data.authenticated && data.profile !== null;
+    } catch (error) {
+      console.error('Error checking if user has profile:', error);
+      return false;
+    }
+  };
 
   return (
     <header className="bg-background border-b border-border/40 backdrop-blur-sm sticky top-0 z-10">

@@ -7,6 +7,7 @@ import { getUserProfile } from '@/lib/user-profile';
 import { auth } from '@/auth';
 import { Business, EnrichmentInput, BusinessSearchResponse } from '@/types/business';
 import { GooglePlacesClient } from '@/lib/googleplaces';
+import { openai } from '@ai-sdk/openai';
 
 // Create the business agent
 const businessAI = createAI({
@@ -75,7 +76,9 @@ const businessAI = createAI({
       }
     }
   },
-  tools: [googlePlacesTool, openAIEnrichmentTool]
+  tools: [googlePlacesTool, openAIEnrichmentTool],
+  model: openai('gpt-4o'),
+  prompt: BUSINESS_ROUTER_PROMPT
 });
 
 // Function to deduplicate businesses 

@@ -17,6 +17,9 @@ type Profile = {
   description: string
   idealClients: string
   location: string
+  service_radius?: number
+  full_address?: string
+  user_input_data?: any
 }
 
 type Campaign = {
@@ -30,6 +33,10 @@ type Campaign = {
   targetCategories?: string[]
   idealCustomerType?: string
   additionalCustomerTypes?: string
+  coordinates?: {
+    lat: number
+    lng: number
+  }
 }
 
 type Lead = {
@@ -38,7 +45,17 @@ type Lead = {
   company: string
   location: string
   category: string
-  [key: string]: any // For enriched data
+  description?: string
+  contact?: {
+    phone?: string
+    website?: string
+    email?: string
+  }
+  website?: string
+  address?: string
+  hasEventSpace?: boolean
+  photos?: string[]
+  [key: string]: any // For additional data
 }
 
 type CaterlyContextType = {

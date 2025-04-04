@@ -39,11 +39,21 @@ export default function ProfilePage() {
         if (profileData) {
           setProfile(profileData as ExtendedUserProfile)
           
-          // Check if photo_urls exists on the profileData
-          if (profileData && 'photo_urls' in profileData && 
+          // First check user_input_data for photos
+          if (profileData.user_input_data && 
+              profileData.user_input_data.photo_urls && 
+              Array.isArray(profileData.user_input_data.photo_urls)) {
+            setPhotos(profileData.user_input_data.photo_urls);
+            console.log("Found photos in user_input_data:", profileData.user_input_data.photo_urls);
+          }
+          // Fallback to deprecated photo_urls on root level
+          else if ('photo_urls' in profileData && 
               Array.isArray((profileData as any).photo_urls) && 
               (profileData as any).photo_urls.length > 0) {
-            setPhotos((profileData as any).photo_urls)
+            setPhotos((profileData as any).photo_urls);
+            console.log("Found photos in root photo_urls:", (profileData as any).photo_urls);
+          } else {
+            console.log("No photos found in profile");
           }
           
           // Debug: log if we have coordinates in user_input_data
@@ -81,7 +91,8 @@ export default function ProfilePage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include',
       })
 
       const data = await response.json()
