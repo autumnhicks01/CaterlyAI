@@ -924,8 +924,51 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
                     {activeTab !== "services" ? (
                       <Button 
                         onClick={() => {
-                          if (activeTab === "basics") setActiveTab("specialties");
-                          if (activeTab === "specialties") setActiveTab("services");
+                          // Save current step data before moving to next tab
+                          const currentStepData = {
+                            user_input_data: {
+                              // Get existing user input data from local state
+                              yearsInOperation,
+                              idealClients,
+                              cuisineSpecialties,
+                              uniqueSellingPoints,
+                              eventSizes,
+                              serviceTypes,
+                              customizationOptions,
+                              managerContact,
+                              
+                              // If on basics tab, save those fields
+                              ...(activeTab === "basics" ? {
+                                businessName,
+                                ownerContact,
+                                location: location.address,
+                                coordinates: location.coordinates,
+                                serviceRadius,
+                                yearsInOperation
+                              } : {}),
+                              // If on specialties tab, save those fields
+                              ...(activeTab === "specialties" ? {
+                                idealClients,
+                                cuisineSpecialties,
+                                uniqueSellingPoints
+                              } : {})
+                            }
+                          };
+                          
+                          // Save data to Supabase
+                          userProfileService.updateUserInputData(currentStepData.user_input_data)
+                            .then(result => {
+                              console.log(`Saved ${activeTab} data:`, result);
+                              // Move to the next tab after saving
+                              if (activeTab === "basics") setActiveTab("specialties");
+                              if (activeTab === "specialties") setActiveTab("services");
+                            })
+                            .catch(err => {
+                              console.error(`Error saving ${activeTab} data:`, err);
+                              // Still move to the next tab even if save fails
+                              if (activeTab === "basics") setActiveTab("specialties");
+                              if (activeTab === "specialties") setActiveTab("services");
+                            });
                         }}
                         className="ml-auto bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-ai-glow transition-all duration-300"
                       >

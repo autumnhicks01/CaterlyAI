@@ -5,14 +5,13 @@ import { useRouter, useParams } from "next/navigation"
 import Image from "next/image"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { userProfileService, UserProfile } from "@/services/userProfileService"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { ArrowLeft } from 'lucide-react'
-import { StructuredProfile } from "@/lib/ai/agents/profileAgent"
-import { createClient } from "@/utils/supabase/client"
-import { getAuthenticatedUser } from "@/utils/supabase/auth"
+import { Sparkles, MapPin, Clock } from 'lucide-react'
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Spinner } from "@/components/ui/spinner"
+import { generateCateringProfile, CateringProfileData, ProfileResponse } from "@/lib/ai/agents/profileAgent"
 
 export default function AIProfilePage() {
   const router = useRouter()
@@ -25,6 +24,9 @@ export default function AIProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [photos, setPhotos] = useState<string[]>([])
   const [savedSuccessfully, setSavedSuccessfully] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [aiProfile, setAiProfile] = useState<ProfileResponse | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
 
   // Helper function to safely convert values to strings
   const getStringValue = (value: any): string => {
@@ -399,6 +401,55 @@ export default function AIProfilePage() {
     }
   };
 
+  const generateAIProfile = async () => {
+    if (!profile || !profile.user_input_data) {
+      setError("Profile data is incomplete. Please complete your profile setup first.");
+      return;
+    }
+
+    try {
+      setGenerating(true);
+      setError(null);
+
+      // Convert user profile data to the format expected by the profile agent
+      const userData = profile.user_input_data;
+      const profileData: CateringProfileData = {
+        businessName: profile.business_name || "My Catering Business",
+        location: profile.full_address || "",
+        serviceRadius: userData.service_radius || "10 miles",
+        yearsInOperation: userData.yearsInOperation || "1 year",
+        idealClients: userData.idealClients || "Events and gatherings",
+        signatureDishesOrCuisines: userData.cuisineSpecialties || "Various cuisines",
+        uniqueSellingPoints: userData.uniqueSellingPoints || "Quality food and service",
+        brandVoiceAndStyle: "Professional, friendly, and approachable",
+        testimonialsOrAwards: "Happy customers and satisfied clients",
+        contactInformation: {
+          phone: profile.contact_phone || "",
+          email: userData.email || "",
+          website: profile.website_url || "",
+          socialMedia: userData.socialMedia || []
+        }
+      };
+
+      // Generate the AI profile
+      const generatedProfile = await generateCateringProfile(profileData);
+      
+      // Save the generated profile
+      setAiProfile(generatedProfile);
+      
+      // Save to the database
+      const saved = await userProfileService.updateAIProfileData(generatedProfile);
+      if (saved) {
+        setSuccess("AI Profile generated and saved successfully!");
+      }
+    } catch (err) {
+      console.error("Error generating AI profile:", err);
+      setError("Failed to generate AI profile. Please try again.");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   useEffect(() => {
     const fetchProfile = async () => {
       try {
@@ -411,9 +462,16 @@ export default function AIProfilePage() {
           setProfile(profileData)
           
           // Get photo URLs
-          if (profileData.photo_urls && Array.isArray(profileData.photo_urls)) {
-            console.log("Photo URLs found:", profileData.photo_urls);
-            setPhotos(profileData.photo_urls)
+          if (profileData.user_input_data && 
+              profileData.user_input_data.photo_urls && 
+              Array.isArray(profileData.user_input_data.photo_urls)) {
+            console.log("Photo URLs found:", profileData.user_input_data.photo_urls);
+            setPhotos(profileData.user_input_data.photo_urls)
+          } else if ('photo_urls' in profileData && 
+              Array.isArray((profileData as any).photo_urls) && 
+              (profileData as any).photo_urls.length > 0) {
+            console.log("Photo URLs found:", (profileData as any).photo_urls);
+            setPhotos((profileData as any).photo_urls);
           } else {
             console.log("No photo URLs found in profile");
           }
@@ -493,9 +551,9 @@ export default function AIProfilePage() {
 
   if (loading) {
     return (
-      <div className="container mx-auto px-4 py-12">
+      <div className="container mx-auto px-4 py-8">
         <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-purple-500"></div>
+          <Spinner size="lg" className="text-purple-500" />
         </div>
       </div>
     )
@@ -503,7 +561,7 @@ export default function AIProfilePage() {
 
   if (error) {
     return (
-      <div className="container mx-auto px-4 py-12 relative">
+      <div className="container mx-auto px-4 py-8">
         <div className="max-w-4xl mx-auto">
           <Card className="border-red-200">
             <CardHeader>
@@ -511,20 +569,10 @@ export default function AIProfilePage() {
             </CardHeader>
             <CardContent>
               <p>{error}</p>
-              {error.includes('Authentication') && (
-                <p className="mt-2 text-sm">Your session may have expired. Please log in again to continue.</p>
-              )}
-            </CardContent>
-            <CardFooter className="flex gap-2">
-              <Button onClick={() => router.push(`/profile/${profileId}`)}>
-                Return to Profile
+              <Button onClick={() => router.push("/profile/setup")} className="mt-4">
+                Complete Your Profile
               </Button>
-              {error.includes('Authentication') && (
-                <Button variant="outline" onClick={() => router.push('/login?redirect=' + encodeURIComponent(`/profile/${profileId}/ai-profile`))}>
-                  Log In Again
-                </Button>
-              )}
-            </CardFooter>
+            </CardContent>
           </Card>
         </div>
       </div>
@@ -533,13 +581,50 @@ export default function AIProfilePage() {
 
   if (!profile || !structured) {
     return (
-      <div className="container mx-auto px-4 py-12">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold mb-4">No AI-Enhanced Profile Found</h1>
-          <p className="mb-6">You haven't generated an AI profile yet.</p>
-          <Button onClick={() => router.push(`/profile/${profileId}`)}>
-            Generate AI Profile
-          </Button>
+      <div className="container mx-auto px-4 py-8">
+        <div className="max-w-4xl mx-auto">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-500" />
+                AI Enhanced Profile
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-center py-8">
+                <h2 className="text-2xl font-bold mb-4">Generate Your AI Enhanced Profile</h2>
+                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
+                  Let our AI create a professional and compelling profile for your catering business based on your profile information.
+                </p>
+                
+                {error && (
+                  <Alert className="mb-6 bg-red-50 border-red-200 max-w-md mx-auto">
+                    <AlertDescription className="text-red-800">
+                      {error}
+                    </AlertDescription>
+                  </Alert>
+                )}
+                
+                <Button 
+                  onClick={generateAIProfile}
+                  disabled={generating}
+                  className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-ai-glow transition-all duration-300"
+                >
+                  {generating ? (
+                    <>
+                      <Spinner size="sm" className="mr-2" />
+                      Generating AI Profile...
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="h-4 w-4 mr-2" />
+                      Generate AI Enhanced Profile
+                    </>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     )
@@ -581,340 +666,244 @@ export default function AIProfilePage() {
   const hasSellingPoints = whyChooseUs.length > 0;
 
   return (
-    <div className="container mx-auto px-4 py-12 relative">
-      {/* Background effects */}
-      <div className="absolute -top-20 right-0 w-96 h-96 bg-purple-500/5 rounded-full filter blur-3xl animate-pulse-slow"></div>
-      <div className="absolute bottom-20 -left-20 w-96 h-96 bg-blue-500/5 rounded-full filter blur-3xl animate-pulse-slow animation-delay-700"></div>
-      
-      <div className="relative max-w-4xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
-          <Link href={`/profile/${profileId}`} className="flex items-center text-gray-600 hover:text-gray-900">
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Back to Profile
-          </Link>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={regenerateAIProfile}
-            disabled={loading}
-            className="text-xs"
-          >
-            {loading ? (
-              <>
-                <svg className="w-3 h-3 mr-1 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Regenerating...
-              </>
-            ) : (
-              <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3 mr-1" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
-                </svg>
-                Regenerate
-              </>
-            )}
-          </Button>
-        </div>
+    <div className="container mx-auto px-4 py-8">
+      <div className="max-w-4xl mx-auto">
+        {success && (
+          <Alert className="mb-4 bg-green-50 border-green-200">
+            <AlertDescription className="text-green-800">
+              {success}
+            </AlertDescription>
+          </Alert>
+        )}
         
-        <Card className="border border-purple-500/10 bg-card shadow-xl overflow-hidden mt-8">
-          <CardHeader className="border-b border-purple-200/20 bg-purple-50/5">
+        <Card className="mb-8 overflow-hidden border border-purple-500/20 bg-card/50 backdrop-blur-sm">
+          <CardHeader className="border-b border-purple-500/10 bg-purple-50/10">
             <div className="flex justify-between items-center">
-              <CardTitle className="text-purple-900">
-                {businessNameString || profile.business_name || 'Your Business'}
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="h-5 w-5 text-purple-500" />
+                AI Enhanced Profile
               </CardTitle>
-              <div className="flex items-center gap-2">
-                {profile.created_at && (
-                  <span className="text-sm text-gray-500">
-                    {new Date(profile.created_at).toLocaleDateString()}
-                  </span>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={generateAIProfile}
+                disabled={generating}
+              >
+                {generating ? (
+                  <>
+                    <Spinner size="sm" className="mr-2" />
+                    Regenerating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4 mr-2" />
+                    Regenerate
+                  </>
                 )}
-              </div>
+              </Button>
             </div>
-            <div className="text-sm text-gray-600">
-              {locationString || profile.full_address || 'Location not specified'}
-              {serviceAreaString ? `, ${serviceAreaString}` : ''}
-            </div>
-            {metadata && (
-              <div className="mt-2 flex items-center gap-2">
-                {metadata.generationTime && (
-                  <Badge variant="outline" className="text-xs font-normal bg-gray-50/50">
-                    Generated in {parseFloat(metadata.generationTime.toString()).toFixed(1)}s
-                  </Badge>
-                )}
-                {metadata.modelUsed && (
-                  <Badge variant="outline" className="text-xs font-normal bg-gray-50/50">
-                    {metadata.modelUsed}
-                  </Badge>
-                )}
-              </div>
-            )}
-            {error && (
-              <div className="mt-2 text-sm text-red-500">
-                Error: {error}
+            
+            {aiProfile && aiProfile.metadata && (
+              <div className="mt-2 text-xs text-muted-foreground flex gap-3">
+                <span>Generated in {aiProfile.metadata.generationTime.toFixed(1)}s</span>
+                {aiProfile.metadata.characterCount && <span>· {aiProfile.metadata.characterCount} characters</span>}
+                <span>· Using {aiProfile.metadata.modelUsed}</span>
               </div>
             )}
           </CardHeader>
           
-          <CardContent className="p-6 pt-8">
-            <div className="space-y-8">
+          <CardContent className="p-6">
+            <div className="space-y-6">
               {/* Business header */}
               <div className="flex flex-col md:flex-row gap-6 items-start">
-                <div className="aspect-square w-24 h-24 relative rounded-md overflow-hidden border border-gray-200 flex-shrink-0">
+                <div className="aspect-square w-24 h-24 relative rounded-md overflow-hidden border border-border flex-shrink-0">
                   <Image
                     src={primaryPhoto}
-                    alt={businessNameString || "Business logo"}
+                    alt="Business logo"
                     fill
                     className="object-cover"
                   />
                 </div>
                 <div className="space-y-4 flex-1">
                   <div>
-                    <h2 className="text-2xl font-bold text-card-foreground">
-                      {businessNameString || profile.business_name || 'Your Business'}
-                    </h2>
+                    <h2 className="text-2xl font-bold">{businessNameString || profile.business_name || 'Your Business'}</h2>
                     <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-muted-foreground text-sm">
                       <div className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-1 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
-                        <span>
-                          {locationString || profile.full_address || 'Location not specified'}
-                          {serviceAreaString ? `, ${serviceAreaString}` : ''}
-                        </span>
+                        <MapPin className="w-4 h-4 mr-1 text-purple-600" />
+                        <span>{locationString || profile.full_address || 'Location not specified'}</span>
                       </div>
                       <div className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-1 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
+                        <Clock className="w-4 h-4 mr-1 text-blue-600" />
                         <span>{yearsExperienceString || 'Established business'}</span>
                       </div>
                     </div>
                   </div>
                   
-                  <div className="flex items-start">
-                    <div className="aspect-square w-12 h-12 relative rounded-full overflow-hidden border border-gray-200 flex-shrink-0 mr-3">
-                      <Image
-                        src={secondaryPhoto}
-                        alt="Contact person"
-                        fill
-                        className="object-cover"
-                      />
+                  {structured.contactPerson && (
+                    <div className="flex items-start">
+                      <div className="aspect-square w-12 h-12 relative rounded-full overflow-hidden border border-border flex-shrink-0 mr-3">
+                        <Image
+                          src={secondaryPhoto}
+                          alt="Contact person"
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                      <div>
+                        <h4 className="font-medium">Contact Person:</h4>
+                        <p className="text-muted-foreground">
+                          {structured.contactPerson.name}, {structured.contactPerson.title}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <h4 className="font-medium text-card-foreground">Contact Person:</h4>
-                      <p className="text-muted-foreground">
-                        {structured.contactPerson && structured.contactPerson.name 
-                          ? getStringValue(structured.contactPerson.name) 
-                          : 'Contact Manager'}
-                        {structured.contactPerson && structured.contactPerson.title 
-                          ? `, ${getStringValue(structured.contactPerson.title)}` 
-                          : ''}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              
-              {/* Most requested dishes */}
-              <div>
-                <h3 className="text-lg font-medium mb-2 text-card-foreground">Most Requested Dishes:</h3>
-                <div className="flex flex-wrap gap-2 mt-2">
-                  {hasDishes ? (
-                    mostRequestedDishes.map((cuisine, i) => (
-                      <span 
-                        key={i} 
-                        className="px-3 py-1 rounded-full text-sm bg-gradient-to-r from-purple-100 to-blue-100 text-purple-800 border border-purple-200/50"
-                      >
-                        {getStringValue(cuisine)}
-                      </span>
-                    ))
-                  ) : (
-                    <p className="text-muted-foreground">
-                      This business hasn't specified any signature dishes yet.
-                      {userData?.cuisineSpecialties ? ` They specialize in ${userData.cuisineSpecialties}.` : ''}
-                    </p>
                   )}
                 </div>
               </div>
               
-              {/* Overview */}
-              <div>
-                <h3 className="text-lg font-medium mb-2 text-card-foreground">Overview:</h3>
-                <p className="text-card-foreground leading-relaxed">
-                  {getStringValue(structured.overview) || 
-                   `${profile.business_name || 'This business'} offers catering services` + 
-                   (profile.full_address ? ` in ${profile.full_address}` : '') + 
-                   '. Contact them for more information about their services.'}
+              {/* Most requested dishes */}
+              {hasDishes ? (
+                <div>
+                  <h3 className="text-lg font-medium mb-2">Most Requested Dishes:</h3>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {mostRequestedDishes.map((cuisine, i) => (
+                      <span 
+                        key={i} 
+                        className="px-3 py-1 rounded-full text-sm bg-gradient-to-r from-purple-100/50 to-blue-100/50 text-purple-800 border border-purple-200/50"
+                      >
+                        {getStringValue(cuisine)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground">
+                  This business hasn't specified any signature dishes yet.
+                  {userData?.cuisineSpecialties ? ` They specialize in ${userData.cuisineSpecialties}.` : ''}
                 </p>
-              </div>
+              )}
+              
+              {/* Overview */}
+              {structured.overview && (
+                <div>
+                  <h3 className="text-lg font-medium mb-2">Overview:</h3>
+                  <p className="leading-relaxed">{getStringValue(structured.overview)}</p>
+                </div>
+              )}
               
               {/* Why Choose Us */}
-              <div>
-                <h3 className="text-lg font-medium mb-2 text-card-foreground">Why Choose Us:</h3>
-                <div className="space-y-2">
-                  {hasSellingPoints ? (
-                    whyChooseUs.map((point, i) => (
+              {hasSellingPoints ? (
+                <div>
+                  <h3 className="text-lg font-medium mb-2">Why Choose Us:</h3>
+                  <div className="space-y-2">
+                    {whyChooseUs.map((point, i) => (
                       <div key={i} className="flex items-start">
                         <div className="w-5 h-5 rounded-full bg-gradient-to-r from-purple-500 to-blue-500 flex items-center justify-center text-white text-xs mr-2 mt-0.5 flex-shrink-0">
                           <svg xmlns="http://www.w3.org/2000/svg" className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
                             <polyline points="20 6 9 17 4 12"></polyline>
                           </svg>
                         </div>
-                        <p className="text-card-foreground">{getStringValue(point)}</p>
+                        <p>{getStringValue(point)}</p>
                       </div>
-                    ))
-                  ) : (
-                    <p className="text-muted-foreground">
-                      No specific selling points have been added yet.
-                      {userData?.uniqueSellingPoints ? 
-                      ` Their unique qualities include: ${userData.uniqueSellingPoints}` : ''}
-                    </p>
-                  )}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <p className="text-muted-foreground">
+                  No specific selling points have been added yet.
+                  {userData?.uniqueSellingPoints ? 
+                  ` Their unique qualities include: ${userData.uniqueSellingPoints}` : ''}
+                </p>
+              )}
               
               {/* Ideal Clients */}
               <div>
-                <h3 className="text-lg font-medium mb-2 text-card-foreground">Ideal Clients:</h3>
-                <p className="text-card-foreground">
-                  {getStringValue(structured.idealClients) || 
-                   userData?.idealClients || 
-                   'All types of clients and events'}
-                </p>
+                <h3 className="text-lg font-medium mb-2">Ideal Clients:</h3>
+                <p>{getStringValue(structured.idealClients) || 
+                 userData?.idealClients || 
+                 'All types of clients and events'}</p>
               </div>
               
-              {/* Customer Reviews & Awards */}
-              {structured.testimonialsAndAwards && 
-                ((structured.testimonialsAndAwards.testimonials && structured.testimonialsAndAwards.testimonials.length > 0) || 
-                 (structured.testimonialsAndAwards.awards && structured.testimonialsAndAwards.awards.length > 0)) && (
+              {/* Testimonials & Awards */}
+              {structured.testimonialsAndAwards && (
                 <div>
-                  <h3 className="text-lg font-medium mb-2 text-card-foreground">Customer Reviews & Awards:</h3>
+                  <h3 className="text-lg font-medium mb-2">Testimonials & Awards:</h3>
                   <div className="space-y-3">
                     {structured.testimonialsAndAwards.testimonials && 
-                      structured.testimonialsAndAwards.testimonials.map((testimonial, i) => (
-                        <div key={i} className="p-4 bg-gradient-to-r from-purple-50/30 to-blue-50/30 rounded-lg border border-purple-100/30">
-                          <p className="text-card-foreground italic">
-                            "{getStringValue(testimonial.quote)}"
-                          </p>
-                          <p className="text-sm text-muted-foreground mt-2">— {getStringValue(testimonial.source)}</p>
-                        </div>
-                      ))
-                    }
+                     structured.testimonialsAndAwards.testimonials.map((testimonial, i) => (
+                      <div key={i} className="p-4 bg-gradient-to-r from-purple-50/30 to-blue-50/30 rounded-lg border border-purple-100/30">
+                        <p className="italic">"{getStringValue(testimonial.quote)}"</p>
+                        <p className="text-sm text-muted-foreground mt-2">— {getStringValue(testimonial.source)}</p>
+                      </div>
+                    ))}
                     
                     {structured.testimonialsAndAwards.awards && 
-                      structured.testimonialsAndAwards.awards.map((award, i) => (
-                        <div key={i} className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-r from-yellow-400 to-amber-500 flex items-center justify-center text-white flex-shrink-0">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
-                            </svg>
+                     structured.testimonialsAndAwards.awards.length > 0 && (
+                      <div className="space-y-2 mt-3">
+                        {structured.testimonialsAndAwards.awards.map((award, i) => (
+                          <div key={i} className="flex items-center gap-2">
+                            <div className="w-6 h-6 rounded-full bg-gradient-to-r from-yellow-400 to-amber-500 flex items-center justify-center text-white flex-shrink-0">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                              </svg>
+                            </div>
+                            <p>{getStringValue(award)}</p>
                           </div>
-                          <p className="text-card-foreground">{getStringValue(award)}</p>
-                        </div>
-                      ))
-                    }
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
               
-              {/* How to Connect */}
-              <div>
-                <h3 className="text-lg font-medium mb-2 text-card-foreground">How to Connect:</h3>
-                <p className="text-card-foreground mb-3">
-                  Ready to book or have questions? Contact us using the information below:
-                </p>
-                <div className="flex flex-wrap gap-3">
-                  {/* Phone - Use profile contact_phone as fallback */}
-                  {(structured.contactInformation?.phone || contactPhone) && (
-                    <div className="flex items-center text-card-foreground bg-white/10 px-3 py-2 rounded-md border border-purple-200/20">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                      <span>{getStringValue(structured.contactInformation?.phone || contactPhone)}</span>
-                    </div>
-                  )}
-                  
-                  {/* Email - Use profile contact_email as fallback */}
-                  {(structured.contactInformation?.email || contactEmail) && (
-                    <div className="flex items-center text-card-foreground bg-white/10 px-3 py-2 rounded-md border border-purple-200/20">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      <span>{getStringValue(structured.contactInformation?.email || contactEmail)}</span>
-                    </div>
-                  )}
-                  
-                  {/* Website URL - Use profile website_url as fallback */}
-                  {websiteUrl && (
-                    <div className="flex items-center text-card-foreground bg-white/10 px-3 py-2 rounded-md border border-purple-200/20">
-                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
-                      </svg>
-                      <span>{getStringValue(websiteUrl)}</span>
-                    </div>
-                  )}
-                  
-                  {/* Social Media - Combine both sources */}
-                  {(() => {
-                    // Combine social media links from both sources without duplicates
-                    const allSocialLinks = [
-                      ...(structured.contactInformation?.socialMedia || []),
-                      ...(socialMediaLinks || [])
-                    ];
-                    
-                    // Filter out empty strings and remove duplicates
-                    const uniqueSocialLinks = [...new Set(allSocialLinks.filter(link => link))];
-                    
-                    return uniqueSocialLinks.map((social, i) => (
-                      <div key={i} className="flex items-center text-card-foreground bg-white/10 px-3 py-2 rounded-md border border-purple-200/20">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-pink-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              {/* Contact Information */}
+              {structured.contactInformation && (
+                <div>
+                  <h3 className="text-lg font-medium mb-2">Contact Information:</h3>
+                  <div className="space-y-1">
+                    {structured.contactInformation.phone && (
+                      <p className="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                         </svg>
-                        <span>{getStringValue(social)}</span>
-                      </div>
-                    ));
-                  })()}
+                        {structured.contactInformation.phone}
+                      </p>
+                    )}
+                    {structured.contactInformation.email && (
+                      <p className="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        {structured.contactInformation.email}
+                      </p>
+                    )}
+                    {structured.contactInformation.socialMedia && 
+                     structured.contactInformation.socialMedia.map((social, i) => (
+                      <p key={i} className="flex items-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                        </svg>
+                        {social}
+                      </p>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           </CardContent>
-          
-          <CardFooter className="bg-gray-50 dark:bg-gray-900/20 border-t border-gray-100 dark:border-gray-800 p-4">
-            <div className="flex justify-between items-center w-full">
-              <div className="text-sm text-gray-500">
-                Enhanced with AI
-                {metadata?.characterCount && ` • ${metadata.characterCount} characters`}
-              </div>
-              <Link href="/campaign/setup">
-                <Button>
-                  Continue to Campaign Setup
-                </Button>
-              </Link>
-            </div>
-          </CardFooter>
         </Card>
-
-        {/* Photo Gallery */}
-        {hasPhotos && (
-          <div className="mt-8">
-            <h3 className="text-lg font-medium mb-4 text-card-foreground">Photo Gallery</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-              {photos.map((photo, index) => (
-                <div key={index} className="aspect-video relative rounded-md overflow-hidden border border-gray-200">
-                  <Image
-                    src={photo}
-                    alt={`Gallery image ${index + 1}`}
-                    fill
-                    className="object-cover"
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        
+        <div className="flex justify-between">
+          <Button 
+            variant="outline" 
+            onClick={() => router.push(`/profile/${profileId}`)}
+            className="border-gray-200 hover:border-purple-500/50"
+          >
+            <svg className="w-4 h-4 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="m15 18-6-6 6-6"/>
+            </svg>
+            Back to Profile
+          </Button>
+        </div>
       </div>
     </div>
   )

@@ -89,27 +89,57 @@ export async function POST(request: NextRequest) {
     
     const userId = session.user.id
     
-    // Update the user profile in the database
-    const { data, error } = await supabase
+    // Check if a profile already exists for this user
+    const { data: existingProfile, error: fetchError } = await supabase
       .from('user_profiles')
-      .upsert({
-        ...payload,
-        user_id: userId,
-        updated_at: new Date().toISOString()
-      })
-      .select()
+      .select('id')
+      .eq('user_id', userId)
+      .single()
+      
+    if (fetchError && fetchError.code !== 'PGRST116') {
+      console.error('Error checking for existing profile:', fetchError)
+      return NextResponse.json({ 
+        error: 'Failed to check for existing profile',
+        details: fetchError 
+      }, { status: 500 })
+    }
     
-    if (error) {
-      console.error('Error saving profile:', error)
+    // If profile exists, use update instead of upsert to avoid duplicate key violation
+    let result;
+    if (existingProfile) {
+      console.log('Updating existing profile for user:', userId)
+      result = await supabase
+        .from('user_profiles')
+        .update({
+          ...payload,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', userId)
+        .select()
+    } else {
+      console.log('Creating new profile for user:', userId)
+      result = await supabase
+        .from('user_profiles')
+        .insert({
+          ...payload,
+          user_id: userId,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+    }
+    
+    if (result.error) {
+      console.error('Error saving profile:', result.error)
       return NextResponse.json({ 
         error: 'Failed to save profile',
-        details: error 
+        details: result.error 
       }, { status: 500 })
     }
     
     return NextResponse.json({ 
       success: true,
-      data 
+      data: result.data 
     }, { status: 200 })
   } catch (error) {
     console.error('Unexpected error saving profile:', error)

@@ -1,7 +1,7 @@
 import { validateEnv } from '@/lib/env';
 import { z } from 'zod';
 import { AI_PROFILE_ROUTER_PROMPT } from '../prompts/router';
-import OpenAI from 'openai';
+import { OpenAI } from 'openai';
 
 // Initialize OpenAI client
 const openai = new OpenAI({

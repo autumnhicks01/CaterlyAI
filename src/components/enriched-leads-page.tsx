@@ -53,20 +53,62 @@ export default function EnrichedLeadsPage() {
   const [isEnriching, setIsEnriching] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [messageType, setMessageType] = useState<'success' | 'warning' | 'error'>('success')
+
+  // Check for messages in URL
+  useEffect(() => {
+    // Get messages from URL if available
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      
+      // Check for success message
+      const successParam = urlParams.get('success');
+      if (successParam) {
+        setSuccessMessage(decodeURIComponent(successParam));
+        // Check if there's a status parameter (success or warning)
+        const statusParam = urlParams.get('status');
+        setMessageType(statusParam === 'warning' ? 'warning' : 'success');
+      }
+      
+      // Check for error message
+      const errorParam = urlParams.get('error');
+      if (errorParam) {
+        setSuccessMessage(decodeURIComponent(errorParam));
+        setMessageType('error');
+      }
+      
+      // Clear the parameter from the URL after reading it
+      if (successParam || errorParam) {
+        const newUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, newUrl);
+        
+        // Auto-clear the message after 5 seconds
+        const timer = setTimeout(() => {
+          setSuccessMessage(null);
+        }, 5000);
+        
+        return () => clearTimeout(timer);
+      }
+    }
+  }, []);
 
   // Fetch saved leads from Supabase
   async function fetchLeads() {
     try {
       setIsRefreshing(true)
       setError(null)
+      console.log('Fetching leads from API...')
       const response = await fetch('/api/leads/saved')
       
       if (!response.ok) {
         const data = await response.json()
+        console.error('API error response:', data)
         throw new Error(data.error || 'Failed to fetch leads')
       }
       
       const data = await response.json()
+      console.log(`Fetched ${data.leads?.length || 0} leads from API`)
       setLeads(data.leads || [])
     } catch (err) {
       console.error('Error fetching leads:', err)
@@ -179,6 +221,25 @@ export default function EnrichedLeadsPage() {
           <Alert className="mb-6 bg-red-50/80 border border-red-200 text-red-800 max-w-7xl mx-auto">
             <AlertCircleIcon className="h-5 w-5 text-red-600" />
             <AlertDescription className="ml-2">{error}</AlertDescription>
+          </Alert>
+        )}
+        
+        {successMessage && (
+          <Alert className={`mb-6 ${
+            messageType === 'success' ? 'bg-green-50/80 border border-green-200 text-green-800' :
+            messageType === 'warning' ? 'bg-amber-50/80 border border-amber-200 text-amber-800' :
+            'bg-red-50/80 border border-red-200 text-red-800'
+          } max-w-7xl mx-auto`}>
+            <span className={`h-5 w-5 ${
+              messageType === 'success' ? 'text-green-600' :
+              messageType === 'warning' ? 'text-amber-600' :
+              'text-red-600'
+            }`}>
+              {messageType === 'success' ? '✓' : 
+               messageType === 'warning' ? '⚠️' : 
+               '❌'}
+            </span>
+            <AlertDescription className="ml-2">{successMessage}</AlertDescription>
           </Alert>
         )}
 
@@ -355,10 +416,14 @@ export default function EnrichedLeadsPage() {
                           <td className="py-3 px-4 text-right">
                             <Button
                               onClick={() => viewLeadProfile(lead.id)}
-                              className="bg-gradient-to-r from-purple-600 to-blue-600 text-white text-sm py-1"
-                              disabled={lead.status !== 'enriched'}
+                              className={`text-white text-sm py-1 ${
+                                lead.enrichment_data ? 
+                                "bg-gradient-to-r from-purple-600 to-blue-600" : 
+                                "bg-gradient-to-r from-amber-500 to-orange-600"
+                              }`}
+                              title={!lead.enrichment_data ? "This lead hasn't been enriched yet" : ""}
                             >
-                              View Profile
+                              {lead.enrichment_data ? "View Profile" : "View (Not Enriched)"}
                             </Button>
                           </td>
                         </tr>

@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/componen
 import { userProfileService, UserProfile } from "@/services/userProfileService"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Badge } from "@/components/ui/badge"
-import { Building2, User, MapPin, Clock, ArrowRight } from 'lucide-react'
+import { Building2, User, MapPin, Clock, ArrowRight, Sparkles } from 'lucide-react'
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CheckCircleIcon } from "lucide-react"
 
@@ -259,6 +259,25 @@ export default function ProfilePage() {
                   <div className="pl-6">
                     <p>{yearsInBusiness || 'Not specified'}</p>
                   </div>
+                </div>
+
+                <div className="mt-6 flex flex-wrap gap-3">
+                  <Button variant="outline" size="sm" onClick={() => router.push(`/profile/${profile.id}/ai-profile`)}>
+                    <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
+                    AI Enhanced Profile
+                  </Button>
+                  
+                  {yearsInBusiness && (
+                    <Badge variant="outline" className="bg-secondary/40 border-blue-500/20">
+                      {yearsInBusiness} years in business
+                    </Badge>
+                  )}
+                  
+                  {serviceRadius && (
+                    <Badge variant="outline" className="bg-secondary/40 border-green-500/20">
+                      {serviceRadius} mile radius
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
