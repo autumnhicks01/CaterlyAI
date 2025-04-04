@@ -1,0 +1,188 @@
+"use client"
+
+import type React from "react"
+import { useState, useEffect } from "react"
+import Image from "next/image"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Card, CardContent } from "@/components/ui/card"
+import { useCaterly, useCatering } from "../app/context/caterly-context"
+import { useRouter } from "next/navigation"
+
+export default function LandingPage() {
+  const [mounted, setMounted] = useState(false)
+  const router = useRouter()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  const handleLogin = () => {
+    router.push('/login')
+  }
+
+  if (!mounted) {
+    return null
+  }
+
+  return (
+    <div className="flex flex-col min-h-screen bg-gradient-to-b from-background to-background/95">
+      {/* Hero Section with starry background */}
+      <section className="relative min-h-[70vh] flex items-center justify-center overflow-hidden">
+        {/* Animated background with stars */}
+        <div className="absolute inset-0 overflow-hidden">
+          {/* Background gradient */}
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(124,58,237,0.2)_0%,rgba(0,0,0,0)_70%)]"></div>
+          <div className="absolute inset-0">
+            {/* Generated stars pattern */}
+            {Array.from({ length: 150 }).map((_, i) => (
+              <div 
+                key={i}
+                className="absolute rounded-full bg-white"
+                style={{
+                  width: `${Math.random() * 3 + 1}px`,
+                  height: `${Math.random() * 3 + 1}px`,
+                  top: `${Math.random() * 100}%`,
+                  left: `${Math.random() * 100}%`,
+                  opacity: Math.random() * 0.9 + 0.1,
+                  animation: `sparkle ${Math.random() * 3 + 2}s infinite`
+                }}
+              ></div>
+            ))}
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-background to-transparent"></div>
+        </div>
+
+        {/* Content */}
+        <div className="container relative mx-auto px-4 z-10 text-center">
+          <div className="max-w-4xl mx-auto">
+            <h1 className="text-5xl md:text-7xl font-bold mb-6 gradient-text animate-float">
+              Automate Your Catering Sales with <span className="ai-text">AI</span>
+            </h1>
+            <p className="text-xl md:text-2xl mb-10 text-foreground/80 max-w-3xl mx-auto">
+              Discover leads, send personalized emails, and grow your catering business on autopilot with our cutting-edge AI technology.
+            </p>
+            <Link href="/login">
+              <Button 
+                size="lg" 
+                className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-600 text-white shadow-ai-glow transition-all duration-300 transform hover:scale-105"
+              >
+                <span className="mr-2">Get Started</span>
+                <svg 
+                  xmlns="http://www.w3.org/2000/svg" 
+                  width="24" 
+                  height="24" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  className="h-4 w-4"
+                >
+                  <path d="M5 12h14"></path>
+                  <path d="m12 5 7 7-7 7"></path>
+                </svg>
+              </Button>
+            </Link>
+          </div>
+        </div>
+
+        {/* Floating elements */}
+        <div className="absolute left-10 top-1/4 w-20 h-20 opacity-20 bg-purple-500 rounded-full filter blur-3xl animate-pulse-glow"></div>
+        <div className="absolute right-10 top-1/3 w-32 h-32 opacity-20 bg-blue-500 rounded-full filter blur-3xl animate-pulse-glow animation-delay-700"></div>
+        <div className="absolute bottom-1/4 left-1/3 w-24 h-24 opacity-20 bg-pink-500 rounded-full filter blur-3xl animate-pulse-glow animation-delay-1000"></div>
+      </section>
+
+      {/* Features Section */}
+      <section className="py-12 bg-background">
+        <div className="container mx-auto px-4">
+
+          <div className="grid md:grid-cols-3 gap-8">
+            <Card className="bg-secondary/20 border-purple-500/10 shadow-medium overflow-hidden group">
+              <CardContent className="p-6 relative">
+                <div className="absolute inset-0 bg-gradient-shine bg-[length:100px_100px] opacity-0 group-hover:opacity-10 transition-opacity duration-700"></div>
+                <div className="rounded-full bg-purple-900/20 w-12 h-12 flex items-center justify-center mb-4 ai-icon">
+                  <span className="text-purple-400 text-xl font-bold">1</span>
+                </div>
+                <h3 className="text-xl font-semibold mb-2 text-foreground">AI-Enhanced Company Information</h3>
+                <p className="text-muted-foreground font-semibold mb-2">
+                  "We supercharge your business profile using AI."
+                </p>
+                <p className="text-muted-foreground">
+                  Our system refines your catering business profile—highlighting your unique offerings, specialties, and brand identity—to make a stronger first impression on potential clients.
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-secondary/20 border-blue-500/10 shadow-medium overflow-hidden group">
+              <CardContent className="p-6 relative">
+                <div className="absolute inset-0 bg-gradient-shine bg-[length:100px_100px] opacity-0 group-hover:opacity-10 transition-opacity duration-700"></div>
+                <div className="rounded-full bg-blue-900/20 w-12 h-12 flex items-center justify-center mb-4 ai-icon">
+                  <span className="text-blue-400 text-xl font-bold">2</span>
+                </div>
+                <h3 className="text-xl font-semibold mb-2 text-foreground">Automated Lead Search & Data Enrichment <span className="sparkle-subtle"></span></h3>
+                <p className="text-muted-foreground font-semibold mb-2">
+                  "We find and enrich leads in your area."
+                </p>
+                <p className="text-muted-foreground">
+                  An AI agent scours the web for potential clients looking for catering services nearby, then uses web crawling and data enrichment to gather critical details (contact info, event types, etc.).
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-secondary/20 border-pink-500/10 shadow-medium overflow-hidden group">
+              <CardContent className="p-6 relative">
+                <div className="absolute inset-0 bg-gradient-shine bg-[length:100px_100px] opacity-0 group-hover:opacity-10 transition-opacity duration-700"></div>
+                <div className="rounded-full bg-pink-900/20 w-12 h-12 flex items-center justify-center mb-4 ai-icon">
+                  <span className="text-pink-400 text-xl font-bold">3</span>
+                </div>
+                <h3 className="text-xl font-semibold mb-2 text-foreground">Smart Drip Campaign & Real-Time Alerts</h3>
+                <p className="text-muted-foreground font-semibold mb-2">
+                  "We nurture leads until they're ready to book."
+                </p>
+                <p className="text-muted-foreground">
+                  Once prospects are identified, our system crafts a personalized drip campaign and notifies you as soon as someone shows interest or is ready to schedule—helping you close deals faster.
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Testimonial Section */}
+      <section className="py-20 bg-gradient-to-b from-background to-purple-950/20">
+        <div className="container mx-auto px-4 text-center relative">
+          <div className="absolute inset-0 overflow-hidden opacity-10">
+            <div className="absolute top-0 left-1/4 w-1/2 h-full bg-gradient-radial from-purple-500/20 to-transparent"></div>
+          </div>
+          
+          <div className="relative">
+            <h2 className="text-3xl font-bold mb-10 gradient-text">What Our Customers Say</h2>
+
+            <div className="max-w-3xl mx-auto">
+              <div className="p-8 rounded-2xl bg-secondary/30 backdrop-blur-sm border border-purple-500/10 shadow-ai-glow">
+                <blockquote className="text-xl italic mb-6 text-foreground/90">
+                  "CaterlyAI has transformed our business. We've seen a 40% increase in corporate bookings since we started
+                  using the platform. The AI-generated leads are incredibly accurate!"
+                </blockquote>
+                <div className="flex items-center justify-center">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
+                    SJ
+                  </div>
+                  <div className="ml-4 text-left">
+                    <p className="font-semibold text-foreground">Sarah Johnson</p>
+                    <p className="text-sm text-muted-foreground">Gourmet Delights Catering</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  )
+}
+
