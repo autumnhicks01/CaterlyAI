@@ -1,5 +1,5 @@
 import { cookies } from 'next/headers';
-import { createClient } from '@/lib/supabase-server';
+import { createClient } from '@/utils/supabase/server';
 import { type Session } from '@supabase/supabase-js';
 
 export async function auth(): Promise<{ user: { id: string } | null, session: Session | null }> {

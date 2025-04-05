@@ -3,6 +3,7 @@ import { cookies } from 'next/headers'
 import { type Database } from '@/types/supabase'
 
 export function createClient() {
+  // Cookie store can sometimes be a promise or a value
   const cookieStore = cookies()
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -14,8 +15,12 @@ export function createClient() {
     {
       cookies: {
         get(name: string) {
-          const cookie = cookieStore.get(name)
-          return cookie?.value
+          try {
+            return cookieStore.get(name)?.value
+          } catch (error) {
+            console.warn('Warning: Could not get cookie', error)
+            return undefined
+          }
         },
         set(name: string, value: string, options: CookieOptions) {
           try {

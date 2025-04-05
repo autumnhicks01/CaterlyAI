@@ -63,7 +63,6 @@ export default function LeadsDiscoveryPage() {
   // Load businesses on component mount
   useEffect(() => {
     let mounted = true;
-    let timeoutId: NodeJS.Timeout;
 
     async function fetchBusinesses() {
       if (!campaign) {
@@ -73,41 +72,21 @@ export default function LeadsDiscoveryPage() {
       }
 
       try {
-        // Set a timeout to limit waiting time
-        const timeoutPromise = new Promise<null>((resolve) => {
-          timeoutId = setTimeout(() => {
-            resolve(null);
-          }, 15000); // 15 second timeout
-        });
-
         // Build query from campaign categories
         const categoryQueries = campaign.targetCategories || [];
         let query = categoryQueries.length > 0 
           ? categoryQueries.join(" OR ") 
           : "event venue OR wedding venue";
 
-        // Race between the actual search and the timeout
-        const searchPromise = businessService.searchBusinesses({
+        // Execute the search
+        const result = await businessService.searchBusinesses({
           query,
           radius: campaign.radius,
           coordinates: campaign.coordinates as any
         });
 
-        const result = await Promise.race([searchPromise, timeoutPromise]);
-        
-        // Clear the timeout if search completed before timeout
-        clearTimeout(timeoutId);
-
         // If component was unmounted during the search, do nothing
         if (!mounted) return;
-
-        // Handle timeout
-        if (!result) {
-          setBusinesses([]); // Set empty array if timed out
-          setError("Search is taking too long. Showing partial results.");
-          setLoading(false);
-          return;
-        }
 
         if (result.error) {
           throw new Error(result.error);
@@ -135,7 +114,6 @@ export default function LeadsDiscoveryPage() {
     // Cleanup function
     return () => {
       mounted = false;
-      clearTimeout(timeoutId);
     };
   }, [campaign]);
 

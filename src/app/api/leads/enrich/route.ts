@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { auth } from '@/auth';
-import { createClient } from '@/lib/supabase/server';
-import { enrichmentAgent } from '@/lib/ai/agents/enrichmentAgent';
+import { createClient } from '@/utils/supabase/server';
+import { workflowManager } from '@/lib/workflows';
 
 export const maxDuration = 300; // 5 minutes for enrichment process
 
@@ -26,68 +26,46 @@ export async function POST(req: NextRequest) {
       );
     }
     
-    console.log(`Starting enrichment for ${leadIds.length} leads`);
+    console.log(`Starting enrichment for ${leadIds.length} leads using workflow architecture`);
     
-    // Use the enrichmentAgent to enrich the leads
-    const enrichmentResult = await enrichmentAgent.steps.enrichLeads({ leadIds });
+    // Execute the lead enrichment workflow
+    const result = await workflowManager.executeWorkflow('lead-enrichment', { leadIds });
     
-    if (!enrichmentResult.success) {
-      console.error('Lead enrichment failed:', enrichmentResult.message);
+    if (!result.success) {
+      console.error('Lead enrichment workflow failed:', result.error);
       return Response.json(
         { 
-          error: 'Failed to enrich leads: ' + enrichmentResult.message,
-          details: enrichmentResult.error
+          error: 'Failed to enrich leads',
+          details: result.error?.message
         },
         { status: 500 }
       );
     }
     
-    // Get the number of successfully enriched leads
-    const successCount = enrichmentResult.results?.successful || 0;
+    // Get the results from the final update step
+    const updateResults = result.stepResults.get('update-leads')?.data;
     
-    // Update the leads' status to 'enriched' in Supabase
-    try {
-      const supabase = createClient();
-      const updatedLeads = [];
-      
-      // For each lead that was successfully enriched, set its status to 'enriched'
-      for (const leadId of leadIds) {
-        const { data, error: updateError } = await supabase
-          .from('saved_leads')
-          .update({ status: 'enriched' })
-          .eq('id', leadId)
-          .select('id, name')
-          .single();
-        
-        if (updateError) {
-          console.error(`Error updating lead ${leadId} status:`, updateError);
-        } else if (data) {
-          console.log(`Updated lead ${data.name} (${leadId}) status to 'enriched'`);
-          updatedLeads.push(data);
-        }
-      }
-      
-      return Response.json({
-        success: true,
-        message: `${successCount} leads enriched successfully`,
-        updatedLeads,
-        count: updatedLeads.length,
-        results: enrichmentResult.results
-      });
-    } catch (updateErr) {
-      console.error('Error updating lead statuses:', updateErr);
-      // Still return success for enrichment, but note the status update failure
-      return Response.json({
-        success: true,
-        warning: 'Leads were enriched but status update failed: ' + String(updateErr),
-        message: `${successCount} leads enriched successfully but status update failed`,
-        results: enrichmentResult.results
-      });
+    if (!updateResults) {
+      return Response.json(
+        { error: 'Workflow completed but no update results available' },
+        { status: 500 }
+      );
     }
+    
+    return Response.json({
+      success: true,
+      message: `${updateResults.successful} leads enriched successfully`,
+      failed: updateResults.failed,
+      total: updateResults.total,
+      workflow: {
+        name: result.workflowId,
+        executionTime: result.duration
+      }
+    });
   } catch (error) {
     console.error('Lead enrichment error:', error);
     return Response.json(
-      { error: String(error) },
+      { error: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
   }

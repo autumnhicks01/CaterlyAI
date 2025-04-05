@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase-server'
+import { createClient } from '@/utils/supabase/server'
 
 export default async function ProfileRedirect() {
   // Get the current session

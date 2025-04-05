@@ -9,12 +9,20 @@ export const businessService = {
    */
   async searchBusinesses(request: BusinessSearchRequest): Promise<BusinessSearchResponse> {
     try {
-      const response = await fetch('/api/business', {
-        method: 'POST',
+      // Use the new workflow-based API endpoint
+      const searchParams = new URLSearchParams();
+      searchParams.append('query', request.query || '');
+      searchParams.append('location', request.location || '');
+      
+      if (request.radius) {
+        searchParams.append('radius', request.radius.toString());
+      }
+      
+      const response = await fetch(`/api/leads?${searchParams.toString()}`, {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(request),
       });
 
       if (!response.ok) {
@@ -38,12 +46,15 @@ export const businessService = {
    */
   async enrichBusinesses(businesses: Business[]): Promise<BusinessSearchResponse> {
     try {
-      const response = await fetch('/api/business', {
-        method: 'PATCH',
+      const response = await fetch('/api/leads/save', {
+        method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ businesses }),
+        body: JSON.stringify({ 
+          businesses,
+          skipEnrichment: false
+        }),
       });
 
       if (!response.ok) {
