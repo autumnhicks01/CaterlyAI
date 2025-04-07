@@ -33,8 +33,16 @@ export async function GET(request: NextRequest) {
   try {
     console.log('API: /profile/current called')
     
-    // Create a new Supabase client using the helper
-    const supabase = createClient()
+    // Create headers with CORS configuration
+    const headers = new Headers({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Content-Type': 'application/json'
+    });
+    
+    // Create a new Supabase client using the helper - now awaited
+    const supabase = await createClient()
     
     // Get the current session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
@@ -44,7 +52,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ 
         error: 'Authentication error',
         details: sessionError
-      }, { status: 401 })
+      }, { status: 401, headers })
     }
     
     if (!session) {
@@ -52,7 +60,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ 
         authenticated: false,
         profile: null
-      }, { status: 401 })
+      }, { status: 401, headers })
     }
     
     console.log('API: Session found for user:', session.user.id)
@@ -73,13 +81,13 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ 
           authenticated: true,
           profile: null
-        })
+        }, { headers })
       }
       
       return NextResponse.json({ 
         error: 'Error fetching profile',
         details: profileError
-      }, { status: 500 })
+      }, { status: 500, headers })
     }
     
     console.log('API: Profile found with ID:', profile?.id)
@@ -100,12 +108,34 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       authenticated: true,
       profile: enhancedProfile
-    })
+    }, { headers })
   } catch (error) {
     console.error('API: Unexpected error in /profile/current:', error)
+    
+    // Create headers with CORS configuration
+    const headers = new Headers({
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Content-Type': 'application/json'
+    });
+    
     return NextResponse.json({ 
       error: 'Unexpected error',
       details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    }, { status: 500, headers })
   }
+}
+
+// Handle OPTIONS requests for CORS preflight
+export async function OPTIONS(request: NextRequest) {
+  return new NextResponse(null, {
+    status: 204,
+    headers: {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Max-Age': '86400' // 24 hours
+    }
+  });
 } 

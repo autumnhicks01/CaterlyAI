@@ -75,6 +75,9 @@ export default function ProfileSetupPage() {
   const placeAutocompleteRef = useRef<HTMLDivElement>(null)
   const [placesLoaded, setPlacesLoaded] = useState(false)
 
+  // Add state for saved profile
+  const [savedProfile, setSavedProfile] = useState<any>(null);
+
   useEffect(() => {
     setMounted(true)
     
@@ -398,8 +401,28 @@ ${structuredProfile.contactInformation.socialMedia.length > 0 ?
       // Show the profile preview
       setGeneratedProfile(formattedProfile);
       
-      // Redirect to the profile page
-      router.push('/profile');
+      // Check if the URL has a query param to redirect to the AI profile
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('generate') === 'ai') {
+        // First save the profile, then redirect to AI profile
+        await saveProfile();
+        
+        // Set a small timeout to ensure the profile is saved before redirect
+        setTimeout(() => {
+          const profileIdToRedirect = savedProfile?.profile?.id || existingProfileId;
+          if (profileIdToRedirect) {
+            console.log("Redirecting to AI profile with ID:", profileIdToRedirect);
+            window.location.href = `/marketing/ai-profile/${profileIdToRedirect}`;
+          } else {
+            // If we don't have a profile ID, go to the profile page
+            console.log("No profile ID found, redirecting to profile page");
+            router.push('/profile');
+          }
+        }, 500);
+      } else {
+        // Otherwise just go to the profile page
+        router.push('/profile');
+      }
       
     } catch (error) {
       console.error("Error generating profile:", error);
@@ -465,87 +488,75 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
     }
   };
 
-  const saveProfile = async () => {
-    if (!user) {
-      console.error('User not authenticated');
-      // Redirect to login or show error
-      router.push("/login");
-      return;
-    }
-    
+  const saveProfile = async (data: FormData, navigate = true) => {
     try {
-      // Process photos only once to ensure consistency
-      const processedPhotos = photos
-        .filter(photo => !photo.includes("placeholder.svg"))
-        .map(photo => {
-          // Any blob URLs should be replaced with placeholders
-          if (photo.startsWith('blob:') || photo.startsWith('data:')) {
-            return 'https://placehold.co/400x300?text=Image+URL+not+stored';
-          }
-          return photo;
-        })
-        .slice(0, 3); // Limit to 3 photos
+      // Extract "generate=ai" flag from the URL
+      const urlParams = new URLSearchParams(window.location.search);
+      const generateAI = urlParams.get('generate') === 'ai';
       
-      // Prepare data for saving to Supabase
-      const profileData = {
-        business_name: businessName,
-        full_address: location.address,
-        delivery_radius: serviceRadius ? parseInt(serviceRadius) : 10,
-        business_type: focus,
-        contact_phone: ownerContact,
-        website_url: menuLink || orderingLink,
-        
-        // Store all data in user_input_data to ensure it's preserved
-        user_input_data: {
-          coordinates: location.coordinates,
-          yearsInOperation,
-          idealClients,
-          cuisineSpecialties,
-          uniqueSellingPoints,
-          eventSizes,
-          serviceTypes,
-          customizationOptions,
-          managerContact,
-          photo_urls: processedPhotos // Store photos in user_input_data only
-        },
-        ai_profile_data: JSON.parse(localStorage.getItem('cateringProfile') || '{}').structuredProfile || null
-      };
+      // Clear any existing state
+      setLoading(true);
+      setSaveError(null);
+      setSaveSuccess(null);
+
+      // Convert FormData to JSON
+      const profileData = Object.fromEntries(data.entries());
       
-      console.log('Saving profile data:', profileData);
-      
-      // Save profile to Supabase with credentials included to send cookies
-      const response = await fetch('/api/profile/save', {
-        method: 'POST',
+      // Create or update the profile
+      const response = await fetch('/api/profile', {
+        method: profile ? 'PATCH' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        credentials: 'include', // Include cookies in the request
         body: JSON.stringify(profileData),
+        credentials: 'include',
       });
-      
+
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Error response from server:', errorText);
-        try {
-          const errorData = JSON.parse(errorText);
-          throw new Error(errorData.error || "Failed to save profile");
-        } catch (e) {
-          throw new Error(`Failed to save profile: ${errorText}`);
+        // Handle API error
+        const errorData = await response.json().catch(() => null);
+        throw new Error(
+          `API error (${response.status}): ${
+            errorData?.error || response.statusText
+          }`
+        );
+      }
+
+      // Get the response data which contains the saved profile
+      const savedData = await response.json();
+      const savedProfile = savedData.profile;
+
+      console.log("Profile saved successfully:", savedProfile);
+      
+      setSaveSuccess("Profile saved successfully!");
+      setLoading(false);
+
+      // If navigate param is true, proceed with redirection
+      if (navigate) {
+        // Short delay before redirecting
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        
+        if (generateAI && savedProfile?.id) {
+          // Redirect to AI profile page with the profile ID
+          window.location.href = `/marketing/ai-profile/${savedProfile.id}`;
+        } else {
+          // Redirect to profile page
+          router.push(`/profile/${savedProfile?.id || ''}`);
         }
       }
       
-      // Get the saved profile data
-      const savedProfile = await response.json();
-      console.log('Profile saved successfully:', savedProfile);
-      
-      // Navigate to the profile page
-      router.push("/profile");
-      
+      return savedProfile;
     } catch (error) {
-      console.error("Error saving profile:", error);
-      alert("There was an error saving your profile. Please try again.");
+      console.error('Error saving profile:', error);
+      setSaveError(
+        error instanceof Error
+          ? error.message
+          : 'Unknown error occurred while saving profile'
+      );
+      setLoading(false);
+      return null;
     }
-  }
+  };
 
   // Handle going back to edit the form
   const handleBackToForm = () => {

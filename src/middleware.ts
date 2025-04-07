@@ -11,6 +11,13 @@ export async function middleware(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        cookieOptions: {
+          name: 'sb-auth-token',
+          maxAge: 60 * 60 * 24 * 7, // 7 days 
+          sameSite: 'lax',
+          secure: process.env.NODE_ENV === 'production',
+          path: '/'
+        },
         cookies: {
           get: (name) => {
             const cookies = req.cookies.getAll();
@@ -18,15 +25,18 @@ export async function middleware(req: NextRequest) {
             return cookie?.value;
           },
           set: (name, value, options) => {
+            // Ensure cookie options are consistent
             res.cookies.set({
               name,
               value,
               ...options,
+              path: options.path || '/'
             });
           },
           remove: (name, options) => {
             res.cookies.delete({
               name,
+              path: options?.path || '/',
               ...options,
             });
           },
@@ -72,7 +82,7 @@ function handleAuthFlow(req: NextRequest, res: NextResponse, isAuthenticated: bo
   
   // Redirect authenticated users away from auth pages
   if (isAuthenticated && (req.nextUrl.pathname === '/login' || req.nextUrl.pathname === '/signup')) {
-    return NextResponse.redirect(new URL('/', req.url))
+    return NextResponse.redirect(new URL('/profile', req.url))
   }
   
   return res

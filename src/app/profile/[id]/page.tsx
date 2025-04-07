@@ -262,7 +262,7 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <Button variant="outline" size="sm" onClick={() => router.push(`/profile/${profile.id}/ai-profile`)}>
+                  <Button variant="outline" size="sm" onClick={() => router.push(`/marketing/ai-profile/${profile.id}`)}>
                     <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
                     AI Enhanced Profile
                   </Button>
@@ -324,22 +324,63 @@ export default function ProfilePage() {
           </CardContent>
           <CardFooter>
             {hasAIProfile ? (
-              <Link href={`/profile/${profileId}/ai-profile`}>
-                <Button className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700">
-                  View AI-Enhanced Profile
-                  <ArrowRight className="ml-2 h-4 w-4" />
+              <div className="w-full flex flex-col sm:flex-row gap-3">
+                <Button 
+                  className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  onClick={() => {
+                    try {
+                      if (profile?.id) {
+                        window.location.href = `/marketing/ai-profile/${profile.id}`;
+                      } else {
+                        console.error("No profile ID available for redirection");
+                        window.location.href = "/profile/setup";
+                      }
+                    } catch (error) {
+                      console.error("Error navigating to AI profile:", error);
+                      router.push("/profile/setup");
+                    }
+                  }}
+                >
+                  View AI Profile
                 </Button>
-              </Link>
+                <Button 
+                  className="flex-1 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
+                  onClick={() => {
+                    try {
+                      if (profile?.id) {
+                        // Add a flag to force regeneration
+                        window.location.href = `/marketing/ai-profile/${profile.id}?forceRegenerate=true`;
+                      } else {
+                        console.error("No profile ID available for redirection");
+                        window.location.href = "/profile/setup";
+                      }
+                    } catch (error) {
+                      console.error("Error navigating to AI profile:", error);
+                      router.push("/profile/setup");
+                    }
+                  }}
+                >
+                  Regenerate AI Profile
+                </Button>
+              </div>
             ) : (
               <Button 
                 className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 onClick={() => {
-                  // Redirect to the setup page with generate=ai parameter
-                  router.push(`/profile/setup?generate=ai`)
+                  try {
+                    if (profile?.id) {
+                      window.location.href = `/marketing/ai-profile/${profile.id}`;
+                    } else {
+                      console.error("No profile ID available for redirection");
+                      window.location.href = "/profile/setup";
+                    }
+                  } catch (error) {
+                    console.error("Error navigating to AI profile:", error);
+                    router.push("/profile/setup");
+                  }
                 }}
               >
                 Generate AI Profile
-                <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
             )}
           </CardFooter>

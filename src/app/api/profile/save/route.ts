@@ -1,77 +1,63 @@
-import { NextRequest } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { workflowManager } from '@/lib/workflows';
-import { ContextSetupFn } from '@/lib/workflows/core';
+import { workflowManager } from '@/lib/workflowManager';
 
+/**
+ * POST handler for profile save API
+ * 
+ * This endpoint saves a business profile and generates an enhanced version using AI
+ */
 export async function POST(req: NextRequest) {
+  // Authenticate the user session
+  const session = await auth();
+  
+  if (!session || !session.user) {
+    return NextResponse.json(
+      { error: "Authentication required" },
+      { status: 401 }
+    );
+  }
+  
   try {
-    const session = await auth();
+    // Get profile data from request body
+    const profileData = await req.json();
     
-    if (!session?.user) {
-      return Response.json(
-        { error: 'Authentication required' },
-        { status: 401 }
+    // Validate required fields
+    if (!profileData.businessName) {
+      return NextResponse.json(
+        { error: "Business name is required" },
+        { status: 400 }
       );
     }
     
-    const userId = session.user.id;
-    const profileData = await req.json();
-    
-    console.log(`Generating profile for ${profileData.businessName}`);
-    
-    // Set up context with user ID for the save step
-    const contextSetup: ContextSetupFn = (context) => {
-      context.setMetadata('userId', userId);
+    // Add user ID to the profile data
+    const dataWithUserId = {
+      ...profileData,
+      userId: session.user.id
     };
     
     // Execute the profile generation workflow
-    const result = await workflowManager.executeWorkflow('profile-generation', profileData, contextSetup);
+    const result = await workflowManager.executeWorkflow('profile-generation', dataWithUserId);
     
     if (!result.success) {
-      console.error('Profile generation workflow failed:', result.error);
-      return Response.json(
-        { 
-          error: 'Failed to generate profile',
-          details: result.error?.message
-        },
+      return NextResponse.json(
+        { error: result.error || "Profile generation failed" },
         { status: 500 }
       );
     }
     
-    // Get the results from the save profile step
-    const saveResults = result.stepResults.get('save-profile')?.data;
-    
-    if (!saveResults) {
-      return Response.json(
-        { error: 'Workflow completed but no save results available' },
-        { status: 500 }
-      );
-    }
-    
-    if (!saveResults.success) {
-      return Response.json(
-        { 
-          error: 'Failed to save profile',
-          details: saveResults.error,
-          profile: saveResults.structuredProfile
-        },
-        { status: 500 }
-      );
-    }
-    
-    return Response.json({
-      success: true,
-      profileId: saveResults.profileId,
-      profile: saveResults.structuredProfile,
-      workflow: {
-        name: result.workflowId,
-        executionTime: result.duration
-      }
+    // Return success response with profile ID
+    return NextResponse.json({
+      message: `Profile for "${profileData.businessName}" created successfully`,
+      profileId: result.data?.profileId,
+      success: true
     });
+    
   } catch (error) {
-    console.error('Profile generation error:', error);
-    return Response.json(
-      { error: error instanceof Error ? error.message : String(error) },
+    console.error("Error in profile save API:", error);
+    
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Unknown error occurred" },
       { status: 500 }
     );
   }

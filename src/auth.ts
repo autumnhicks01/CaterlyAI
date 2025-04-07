@@ -4,8 +4,9 @@ import { type Session } from '@supabase/supabase-js';
 
 export async function auth(): Promise<{ user: { id: string } | null, session: Session | null }> {
   try {
-    const cookieStore = cookies();
-    const supabase = createClient();
+    // Both cookies() and createClient() need to be awaited in Next.js 15
+    const cookieStore = await cookies();
+    const supabase = await createClient();
     
     const { data: { session } } = await supabase.auth.getSession();
     

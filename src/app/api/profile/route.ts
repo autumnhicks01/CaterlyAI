@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 
 export async function GET() {
-  const supabase = createClient()
+  // Need to await createClient since it's now an async function
+  const supabase = await createClient()
   
   // Get the current session
   const { data: { session } } = await supabase.auth.getSession()
@@ -28,7 +29,8 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const supabase = createClient()
+  // Need to await createClient since it's now an async function
+  const supabase = await createClient()
   
   // Get the current session
   const { data: { session } } = await supabase.auth.getSession()
@@ -60,7 +62,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const supabase = createClient()
+  // Need to await createClient since it's now an async function
+  const supabase = await createClient()
   
   // Get the current session
   const { data: { session } } = await supabase.auth.getSession()

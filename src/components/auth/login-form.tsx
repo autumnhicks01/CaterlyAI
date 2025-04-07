@@ -36,26 +36,31 @@ export function LoginForm() {
     }
   }, [authUser, redirectTo, router, setUser])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMessage(null)
-    setIsLoading(true)
-
+  const handleLogin = async (event: React.FormEvent) => {
+    event.preventDefault();
+    
+    setIsLoading(true);
+    setErrorMessage(null);
+    
     try {
-      const response = await signIn(email, password)
+      const { error } = await signIn(email, password);
       
-      if (response.error) {
-        setErrorMessage(response.error.message)
-        setIsLoading(false)
-        return
+      if (error) {
+        setErrorMessage(error.message || 'Failed to sign in');
+      } else {
+        // Give the browser time to process cookies before redirect
+        setTimeout(() => {
+          const redirectUrl = searchParams.get('redirect') || '/profile';
+          router.push(redirectUrl);
+          router.refresh(); // Force refresh to update auth state
+        }, 100);
       }
-      
-      // Successful login - auth state change will handle the redirect
     } catch (error: any) {
-      setErrorMessage(error.message || "An error occurred during login")
-      setIsLoading(false)
+      setErrorMessage(error.message || 'An unexpected error occurred');
+    } finally {
+      setIsLoading(false);
     }
-  }
+  };
 
   return (
     <div className="mx-auto max-w-md space-y-6">
@@ -70,7 +75,7 @@ export function LoginForm() {
         </Alert>
       )}
       
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleLogin} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="email">Email</Label>
           <Input

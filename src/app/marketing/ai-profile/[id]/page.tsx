@@ -11,7 +11,74 @@ import { Badge } from "@/components/ui/badge"
 import { Sparkles, MapPin, Clock } from 'lucide-react'
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
-import { generateCateringProfile, CateringProfileData, ProfileResponse } from "@/lib/ai/agents/profileAgent"
+import { generateProfile } from "@/agents/profileAgent"
+
+// Type definitions
+export interface StructuredProfile {
+  businessName: string;
+  location: string;
+  serviceArea: string;
+  yearsExperience: string;
+  contactPerson: {
+    name: string;
+    title: string;
+  };
+  mostRequestedDishes: string[];
+  overview: string;
+  whyChooseUs: string[];
+  idealClients: string;
+  testimonialsAndAwards: {
+    testimonials: Array<{ quote: string; source: string }>;
+    awards: string[];
+  };
+  contactInformation: {
+    phone: string;
+    email: string;
+    socialMedia: string[];
+  };
+}
+
+export interface ProfileResponse {
+  tagline: string;
+  enhancedDescription: string;
+  sellingPoints: string[];
+  targetAudience: string[];
+  marketingRecommendations: string[];
+  competitiveAdvantages: string[];
+  idealClients: Array<{
+    type: string;
+    description: string;
+    approach: string;
+  }>;
+  metadata?: {
+    generatedAt?: string;
+    generationTime?: number;
+    characterCount?: number;
+    modelUsed?: string;
+  };
+}
+
+// Function to get authenticated user data
+async function getAuthenticatedUser() {
+  try {
+    const response = await fetch('/api/auth/session', {
+      credentials: 'include'
+    });
+    
+    if (!response.ok) {
+      return { user: null, session: null };
+    }
+    
+    const sessionData = await response.json();
+    return {
+      user: sessionData.user || null,
+      session: sessionData.session || null
+    };
+  } catch (error) {
+    console.error('Error getting authenticated user:', error);
+    return { user: null, session: null };
+  }
+}
 
 export default function AIProfilePage() {
   const router = useRouter()
@@ -302,149 +369,183 @@ export default function AIProfilePage() {
     return null;
   };
 
-  // Function to directly regenerate the AI profile
-  const regenerateAIProfile = async () => {
+  // Function to automatically generate an AI profile if none exists
+  const autoGenerateAIProfile = async (profileData: UserProfile) => {
     try {
-      if (!profile) {
-        console.error("No profile data available for regeneration");
-        setError("Profile data is missing. Please try returning to your profile page first.");
-        return;
-      }
-
-      // Show loading state
-      setLoading(true);
-      setError(null);
-
-      // Get user input data from the profile and cast it to the right type
-      const userData = profile.user_input_data ? 
-        (profile.user_input_data as Record<string, any>) : {};
-      
-      // Log available profile data for debugging
-      console.log("Profile data available for regeneration:", {
-        id: profile.id,
-        business_name: profile.business_name,
-        full_address: profile.full_address,
-        hasUserData: !!profile.user_input_data,
-        coordinates: userData.coordinates ? 'present' : 'missing',
-      });
-      
-      // Extract cuisine specialties from userData or use a default
-      const cuisineSpecialties = userData.cuisineSpecialties || 
-        "Diverse cuisine options customized to client preferences";
-      
-      // Extract unique selling points from userData or use defaults based on business name
-      const uniqueSellingPoints = userData.uniqueSellingPoints || 
-        `Quality ingredients, professional service, and customized menus for ${profile.business_name || "your catering needs"}`;
-      
-      // Check for valid location data
-      const location = userData.location || profile.full_address || "Your location";
-      if (!location || location === "Your location") {
-        console.warn("No specific location found in profile. This may affect AI profile quality.");
-      }
-      
-      // Extract necessary data and ensure all fields have values
-      const requestData = {
-        businessName: userData.businessName || profile.business_name || "Your Catering Business",
-        location: location,
-        serviceRadius: userData.serviceRadius || profile.delivery_radius?.toString() || "Local area",
-        yearsInOperation: userData.yearsInOperation || "Established catering service",
-        idealClients: userData.idealClients || "Weddings, corporate events, special celebrations, and private parties",
-        signatureDishesOrCuisines: cuisineSpecialties,
-        uniqueSellingPoints: uniqueSellingPoints,
-        brandVoiceAndStyle: userData.focus || "Professional, friendly, and client-focused", 
-        testimonialsOrAwards: userData.testimonials || "Known for excellent service and delicious cuisine",
-        contactInformation: {
-          phone: userData.contactPhone || profile.contact_phone || "Your contact number",
-          email: (userData.ownerContact && userData.ownerContact.includes("@")) ? 
-            userData.ownerContact : (userData.email || "Your email"),
-          website: userData.websiteUrl || profile.website_url || "Your website",
-          socialMedia: Array.isArray(userData.socialMedia) ? userData.socialMedia : []
-        }
-      };
-
-      console.log("Regenerating AI profile with data:", requestData);
-
-      // Ensure the user is authenticated before making the API call
-      const { user, session } = await getAuthenticatedUser();
-      
-      if (!user || !session) {
-        setError("Authentication required. Please log in again.");
-        setLoading(false);
-        return;
-      }
-
-      // Call our regenerate endpoint with credentials to ensure cookies are sent
-      const response = await fetch('/api/profile/regenerate', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include', // Include cookies in the request
-        body: JSON.stringify(requestData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to regenerate profile");
-      }
-
-      const data = await response.json();
-      console.log("AI profile regenerated successfully:", data);
-
-      // Reload the current page to show the updated profile
-      window.location.reload();
-    } catch (error) {
-      console.error("Error regenerating profile:", error);
-      setError(error instanceof Error ? error.message : "Failed to regenerate profile");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const generateAIProfile = async () => {
-    if (!profile || !profile.user_input_data) {
-      setError("Profile data is incomplete. Please complete your profile setup first.");
-      return;
-    }
-
-    try {
+      // Show generating state
       setGenerating(true);
       setError(null);
-
-      // Convert user profile data to the format expected by the profile agent
-      const userData = profile.user_input_data;
-      const profileData: CateringProfileData = {
-        businessName: profile.business_name || "My Catering Business",
-        location: profile.full_address || "",
-        serviceRadius: userData.service_radius || "10 miles",
-        yearsInOperation: userData.yearsInOperation || "1 year",
-        idealClients: userData.idealClients || "Events and gatherings",
-        signatureDishesOrCuisines: userData.cuisineSpecialties || "Various cuisines",
-        uniqueSellingPoints: userData.uniqueSellingPoints || "Quality food and service",
-        brandVoiceAndStyle: "Professional, friendly, and approachable",
-        testimonialsOrAwards: "Happy customers and satisfied clients",
+      setSuccess("Auto-generating AI profile for your business...");
+      
+      // Get user input data or use empty object if none exists
+      const userData = profileData.user_input_data 
+        ? (typeof profileData.user_input_data === 'string' 
+            ? JSON.parse(profileData.user_input_data) 
+            : profileData.user_input_data as Record<string, any>) 
+        : {};
+      
+      console.log("[AUTO GENERATE] Using profile data:", profileData);
+      console.log("[AUTO GENERATE] User data available:", Object.keys(userData).length > 0);
+      
+      // Format data for the AI profile generation
+      const inputData = {
+        id: profileData.id, // Include profile ID for database updates
+        businessName: userData.businessName || profileData.business_name || "Your Catering Business",
+        location: userData.location || profileData.full_address || "Your location",
+        serviceRadius: userData.serviceRadius 
+          ? `${userData.serviceRadius} miles` 
+          : (profileData.delivery_radius?.toString() || "Local area"),
+        yearsInOperation: userData.yearsInOperation 
+          ? userData.yearsInOperation.toString() 
+          : "Established business",
+        idealClients: userData.idealClients || "Weddings, corporate events, special celebrations",
+        signatureDishesOrCuisines: userData.cuisineSpecialties || "Diverse cuisine options",
+        uniqueSellingPoints: userData.uniqueSellingPoints || 
+          `Quality ingredients, professional service, and customized menus for ${
+            userData.businessName || profileData.business_name || "your catering business"
+          }`,
+        brandVoiceAndStyle: "Professional, friendly, and client-focused",
+        testimonialsOrAwards: "Known for excellent service and delicious cuisine",
         contactInformation: {
-          phone: profile.contact_phone || "",
-          email: userData.email || "",
-          website: profile.website_url || "",
-          socialMedia: userData.socialMedia || []
+          phone: userData.ownerContact?.includes('@') ? "" : (userData.ownerContact || profileData.contact_phone || ""),
+          email: userData.managerContact 
+            ? userData.managerContact.split(',')[1]?.trim() || "" 
+            : (userData.ownerContact?.includes('@') ? userData.ownerContact : ""),
+          website: userData.websiteUrl || profileData.website_url || "",
+          socialMedia: []
         }
       };
-
-      // Generate the AI profile
-      const generatedProfile = await generateCateringProfile(profileData);
       
-      // Save the generated profile
-      setAiProfile(generatedProfile);
+      console.log("[AUTO GENERATE] Generating profile with data:", JSON.stringify(inputData, null, 2));
       
-      // Save to the database
-      const saved = await userProfileService.updateAIProfileData(generatedProfile);
-      if (saved) {
-        setSuccess("AI Profile generated and saved successfully!");
+      try {
+        // Use the direct approach that was working before
+        const aiProfileJson = await generateProfile(inputData);
+        console.log("[AUTO GENERATE] Raw response from generateProfile:", aiProfileJson);
+        
+        // Parse the AI-generated profile
+        let aiProfile: ProfileResponse;
+        try {
+          if (typeof aiProfileJson === 'string') {
+            // Log the raw string for debugging
+            console.log("[AUTO GENERATE] Parsing string response:", aiProfileJson);
+            
+            // Check if the response is already a valid JSON object
+            if (aiProfileJson.startsWith('{') && aiProfileJson.endsWith('}')) {
+              aiProfile = JSON.parse(aiProfileJson);
+            } else {
+              // Check if we might be receiving a completion with the JSON embedded
+              const jsonStart = aiProfileJson.indexOf('{');
+              const jsonEnd = aiProfileJson.lastIndexOf('}');
+              
+              if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                const jsonString = aiProfileJson.substring(jsonStart, jsonEnd + 1);
+                console.log("[AUTO GENERATE] Extracted JSON from response:", jsonString);
+                aiProfile = JSON.parse(jsonString);
+              } else {
+                throw new Error("No valid JSON found in response");
+              }
+            }
+          } else {
+            // If it's already an object, use it directly
+            console.log("[AUTO GENERATE] Using non-string response:", aiProfileJson);
+            aiProfile = aiProfileJson;
+          }
+          
+          // Validate that the parsed object has the expected properties
+          if (!aiProfile || typeof aiProfile !== 'object') {
+            throw new Error("Parsed result is not an object");
+          }
+          
+          // Check for required fields and provide defaults if missing
+          const validatedProfile: ProfileResponse = {
+            tagline: aiProfile.tagline || "Premier Catering for Every Occasion",
+            enhancedDescription: aiProfile.enhancedDescription || `${inputData.businessName} provides quality catering services.`,
+            sellingPoints: Array.isArray(aiProfile.sellingPoints) ? aiProfile.sellingPoints : ["Quality ingredients", "Professional service", "Custom menus"],
+            targetAudience: Array.isArray(aiProfile.targetAudience) ? aiProfile.targetAudience : ["Event planners", "Corporate clients", "Private events"],
+            marketingRecommendations: Array.isArray(aiProfile.marketingRecommendations) ? aiProfile.marketingRecommendations : [],
+            competitiveAdvantages: Array.isArray(aiProfile.competitiveAdvantages) ? aiProfile.competitiveAdvantages : [],
+            idealClients: Array.isArray(aiProfile.idealClients) ? aiProfile.idealClients : []
+          };
+          
+          aiProfile = validatedProfile;
+        } catch (parseError: any) {
+          console.error("[AUTO GENERATE] Error parsing AI profile:", parseError);
+          console.error("[AUTO GENERATE] Problematic response:", aiProfileJson);
+          throw new Error(`Failed to parse AI profile response: ${parseError.message}`);
+        }
+        
+        console.log("[AUTO GENERATE] Profile generated successfully:", aiProfile);
+        
+        // Create a structured profile from the AI response
+        const structuredProfile: StructuredProfile = {
+          businessName: inputData.businessName,
+          location: inputData.location,
+          serviceArea: inputData.serviceRadius,
+          yearsExperience: inputData.yearsInOperation,
+          contactPerson: {
+            name: "Contact Manager",
+            title: "Owner"
+          },
+          mostRequestedDishes: Array.isArray(aiProfile.sellingPoints) 
+            ? aiProfile.sellingPoints.slice(0, 3) 
+            : ["Signature dishes", "Seasonal specialties", "Custom menu options"],
+          overview: aiProfile.enhancedDescription || 
+            `${inputData.businessName} is a premier catering service offering exceptional food and service.`,
+          whyChooseUs: Array.isArray(aiProfile.competitiveAdvantages) 
+            ? aiProfile.competitiveAdvantages 
+            : ["Quality ingredients", "Professional service", "Customizable menus"],
+          idealClients: Array.isArray(aiProfile.targetAudience) 
+            ? aiProfile.targetAudience.join(', ') 
+            : inputData.idealClients,
+          testimonialsAndAwards: {
+            testimonials: [
+              {
+                quote: aiProfile.tagline || "Exceptional catering for memorable events",
+                source: "Business Motto"
+              }
+            ],
+            awards: []
+          },
+          contactInformation: {
+            phone: inputData.contactInformation.phone || '',
+            email: inputData.contactInformation.email || '',
+            socialMedia: inputData.contactInformation.socialMedia || []
+          }
+        };
+        
+        setStructured(structuredProfile);
+        setAiProfile(aiProfile);
+        
+        // Save the generated profile to the database
+        const updateResponse = await fetch(`/api/profile/${profileData.id}`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ai_profile_data: {
+              generatedProfile: aiProfile,
+              structuredProfile: structuredProfile
+            }
+          }),
+          credentials: 'include',
+        });
+        
+        if (!updateResponse.ok) {
+          console.warn("Failed to save AI profile to database, but will display it anyway");
+        } else {
+          console.log("AI profile saved successfully to database");
+        }
+        
+        setSuccess("AI profile generated successfully!");
+      } catch (error) {
+        console.error("[AUTO GENERATE] Error:", error);
+        setError(`Failed to generate AI profile: ${error instanceof Error ? error.message : "Unknown error"}`);
       }
-    } catch (err) {
-      console.error("Error generating AI profile:", err);
-      setError("Failed to generate AI profile. Please try again.");
+    } catch (error) {
+      console.error("[AUTO GENERATE] Outer error:", error);
+      setError(`Error in auto-generation: ${error instanceof Error ? error.message : "Unknown error"}`);
     } finally {
       setGenerating(false);
     }
@@ -454,86 +555,191 @@ export default function AIProfilePage() {
     const fetchProfile = async () => {
       try {
         setLoading(true)
-        console.log("Fetching profile...");
-        const profileData = await userProfileService.getUserProfile()
+        console.log("Fetching profile with ID:", profileId);
+        
+        // Check if we should force regeneration
+        const url = new URL(window.location.href);
+        const forceRegenerate = url.searchParams.get('forceRegenerate') === 'true';
+        
+        // First try to fetch directly using the ID
+        if (profileId) {
+          // Make a direct API call to get the profile by ID
+          const response = await fetch(`/api/profile/${profileId}`, {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            console.log("Profile data retrieved by ID:", JSON.stringify(data.profile, null, 2));
+            setProfile(data.profile);
+            
+            // Handle photos and AI data extraction
+            processProfileData(data.profile, forceRegenerate);
+            return;
+          } else {
+            console.log("Couldn't fetch profile by ID, falling back to user profile");
+          }
+        }
+        
+        // Fallback to getting the user's own profile
+        const profileData = await userProfileService.getUserProfile();
         
         if (profileData) {
-          console.log("Profile data retrieved:", JSON.stringify(profileData, null, 2));
-          setProfile(profileData)
+          console.log("Profile data retrieved from user profile:", JSON.stringify(profileData, null, 2));
+          setProfile(profileData);
           
-          // Get photo URLs
-          if (profileData.user_input_data && 
-              profileData.user_input_data.photo_urls && 
-              Array.isArray(profileData.user_input_data.photo_urls)) {
-            console.log("Photo URLs found:", profileData.user_input_data.photo_urls);
-            setPhotos(profileData.user_input_data.photo_urls)
-          } else if ('photo_urls' in profileData && 
-              Array.isArray((profileData as any).photo_urls) && 
-              (profileData as any).photo_urls.length > 0) {
-            console.log("Photo URLs found:", (profileData as any).photo_urls);
-            setPhotos((profileData as any).photo_urls);
-          } else {
-            console.log("No photo URLs found in profile");
-          }
-          
-          // Extract the structured profile from AI data
-          if (profileData.ai_profile_data) {
-            console.log("AI profile data found");
-            // Log the actual data for debugging
-            console.log("AI profile data type:", typeof profileData.ai_profile_data);
-            console.log("Raw AI profile data:", JSON.stringify(profileData.ai_profile_data, null, 2));
-            
-            // Handle different possible formats of ai_profile_data
-            let aiData: any;
-            
-            // If ai_profile_data is a string, try to parse it
-            if (typeof profileData.ai_profile_data === 'string') {
-              try {
-                aiData = JSON.parse(profileData.ai_profile_data);
-                console.log("Parsed ai_profile_data from string:", aiData);
-              } catch (error) {
-                console.error("Failed to parse ai_profile_data string:", error);
-                setError("Failed to parse AI profile data");
-                setLoading(false);
-                return;
-              }
-            } else {
-              // Otherwise treat it as an object
-              aiData = profileData.ai_profile_data as Record<string, any>;
-            }
-            
-            // Extract structured profile using our helper function
-            const structuredProfile = extractStructuredProfile(aiData);
-            
-            if (structuredProfile) {
-              console.log("Structured profile extracted successfully");
-              
-              // Normalize the profile to ensure arrays are handled correctly
-              const normalizedProfile = normalizeStructuredProfile(structuredProfile);
-              console.log("Normalized structured profile:", JSON.stringify(normalizedProfile, null, 2));
-              
-              // Log the normalized arrays
-              console.log("Normalized mostRequestedDishes:", normalizedProfile.mostRequestedDishes);
-              console.log("Normalized whyChooseUs:", normalizedProfile.whyChooseUs);
-              
-              setStructured(normalizedProfile);
-            } else {
-              console.log("No structuredProfile could be extracted from ai_profile_data");
-              setError("AI profile data exists but no structured profile found");
-            }
-          } else {
-            console.log("No ai_profile_data found in profile");
-            setError("No AI profile data found")
-          }
+          // Handle photos and AI data extraction
+          processProfileData(profileData, forceRegenerate);
         } else {
           console.log("No profile data returned from userProfileService");
-          setError("Profile not found")
+          setError("Profile not found. Please complete your profile setup first.");
         }
       } catch (err) {
         console.error("Error loading profile:", err)
         setError("Failed to load profile. Please try again.")
       } finally {
         setLoading(false)
+      }
+    }
+
+    // Helper function to process profile data (extract photos and AI data)
+    const processProfileData = (profileData: UserProfile, forceRegenerate: boolean = false) => {
+      // Get photo URLs
+      if (profileData.user_input_data && 
+          profileData.user_input_data.photo_urls && 
+          Array.isArray(profileData.user_input_data.photo_urls)) {
+        console.log("Photo URLs found:", profileData.user_input_data.photo_urls);
+        setPhotos(profileData.user_input_data.photo_urls)
+      } else if ('photo_urls' in profileData && 
+          Array.isArray((profileData as any).photo_urls) && 
+          (profileData as any).photo_urls.length > 0) {
+        console.log("Photo URLs found:", (profileData as any).photo_urls);
+        setPhotos((profileData as any).photo_urls);
+      } else {
+        console.log("No photo URLs found in profile");
+      }
+      
+      // If we have the force regenerate flag, skip extraction and go straight to generation
+      if (forceRegenerate) {
+        console.log("Force regenerate flag detected, triggering profile generation");
+        autoGenerateAIProfile(profileData);
+        return;
+      }
+      
+      // Extract the structured profile from AI data
+      if (profileData.ai_profile_data) {
+        console.log("AI profile data found");
+        // Log the actual data for debugging
+        console.log("AI profile data type:", typeof profileData.ai_profile_data);
+        console.log("Raw AI profile data:", JSON.stringify(profileData.ai_profile_data, null, 2));
+        
+        // Handle different possible formats of ai_profile_data
+        let aiData: any;
+        
+        // If ai_profile_data is a string, try to parse it
+        if (typeof profileData.ai_profile_data === 'string') {
+          try {
+            aiData = JSON.parse(profileData.ai_profile_data);
+            console.log("Parsed ai_profile_data from string:", aiData);
+          } catch (error) {
+            console.error("Failed to parse ai_profile_data string:", error);
+            setError("Failed to parse AI profile data");
+            setLoading(false);
+            return;
+          }
+        } else {
+          // Otherwise treat it as an object
+          aiData = profileData.ai_profile_data as Record<string, any>;
+        }
+        
+        // Extract structured profile using our helper function
+        const structuredProfile = extractStructuredProfile(aiData);
+        
+        if (structuredProfile) {
+          console.log("Structured profile extracted successfully");
+          
+          // Normalize the profile to ensure arrays are handled correctly
+          const normalizedProfile = normalizeStructuredProfile(structuredProfile);
+          console.log("Normalized structured profile:", JSON.stringify(normalizedProfile, null, 2));
+          
+          // Log the normalized arrays
+          console.log("Normalized mostRequestedDishes:", normalizedProfile.mostRequestedDishes);
+          console.log("Normalized whyChooseUs:", normalizedProfile.whyChooseUs);
+          
+          setStructured(normalizedProfile);
+          
+          // Also extract the generated profile data if available
+          if (aiData.generatedProfile) {
+            setAiProfile(aiData.generatedProfile);
+          }
+        } else {
+          console.log("No structuredProfile could be extracted from ai_profile_data");
+          
+          // Only regenerate if we're missing key profile data
+          const hasMinimalData = 
+            aiData && (
+              (aiData.structuredProfile && Object.keys(aiData.structuredProfile).length > 0) ||
+              (aiData.generatedProfile && Object.keys(aiData.generatedProfile).length > 0) ||
+              (aiData.enhancedDescription || aiData.tagline || aiData.sellingPoints)
+            );
+            
+          if (hasMinimalData) {
+            console.log("Found partial data - will use what we have without regenerating");
+            // We have some data but it's not in the expected format - attempt to normalize
+            try {
+              const constructedProfile = {
+                businessName: profileData.business_name || '',
+                location: profileData.full_address || '',
+                serviceArea: profileData.delivery_radius ? profileData.delivery_radius + ' miles' : 'Local area',
+                yearsExperience: 'Established business',
+                contactPerson: {
+                  name: 'Contact Manager',
+                  title: 'Owner'
+                },
+                mostRequestedDishes: [],
+                overview: aiData.enhancedDescription || aiData.description || '',
+                whyChooseUs: aiData.sellingPoints || aiData.competitiveAdvantages || [],
+                idealClients: aiData.targetAudience ? (Array.isArray(aiData.targetAudience) ? aiData.targetAudience.join(', ') : aiData.targetAudience) : '',
+                testimonialsAndAwards: {
+                  testimonials: aiData.tagline ? [{
+                    quote: aiData.tagline,
+                    source: 'Business Motto'
+                  }] : [],
+                  awards: []
+                },
+                contactInformation: {
+                  phone: profileData.contact_phone || '',
+                  email: '',
+                  socialMedia: []
+                }
+              };
+              
+              setStructured(normalizeStructuredProfile(constructedProfile));
+            } catch (err) {
+              console.error("Failed to construct profile from partial data:", err);
+              // Still don't auto-generate in this case - better to show incomplete data than regenerate
+            }
+          } else if (profileData) {
+            console.log("No valid AI profile data found. Initiating automatic generation.");
+            autoGenerateAIProfile(profileData);
+          } else {
+            setError("AI profile data exists but no structured profile found");
+          }
+        }
+      } else {
+        console.log("No ai_profile_data found in profile");
+        
+        // If profile exists but no AI profile data, automatically generate one
+        if (profileData) {
+          console.log("Profile exists but no AI profile data. Initiating automatic generation.");
+          autoGenerateAIProfile(profileData);
+        } else {
+          setError("No AI profile data found. Please generate a profile first.");
+        }
       }
     }
 
@@ -548,6 +754,24 @@ export default function AIProfilePage() {
       saveStructuredProfileToDatabase();
     }
   }, [structured, profile, savedSuccessfully]);
+
+  // Function to handle generate button click
+  const handleGenerateClick = () => {
+    if (profile) {
+      autoGenerateAIProfile(profile);
+    } else {
+      setError("No profile data available. Please create a profile first.");
+    }
+  };
+
+  // Function to handle regenerate button click
+  const handleRegenerateClick = () => {
+    if (profile) {
+      autoGenerateAIProfile(profile);
+    } else {
+      setError("No profile data available. Please create a profile first.");
+    }
+  };
 
   if (loading) {
     return (
@@ -606,21 +830,16 @@ export default function AIProfilePage() {
                 )}
                 
                 <Button 
-                  onClick={generateAIProfile}
+                  onClick={handleGenerateClick}
                   disabled={generating}
                   className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-ai-glow transition-all duration-300"
                 >
                   {generating ? (
                     <>
-                      <Spinner size="sm" className="mr-2" />
-                      Generating AI Profile...
+                      <Spinner className="w-4 h-4 mr-2 animate-spin" />
+                      Generating...
                     </>
-                  ) : (
-                    <>
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      Generate AI Enhanced Profile
-                    </>
-                  )}
+                  ) : "Generate AI Profile"}
                 </Button>
               </div>
             </CardContent>
@@ -686,28 +905,19 @@ export default function AIProfilePage() {
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={generateAIProfile}
+                onClick={handleRegenerateClick}
                 disabled={generating}
               >
-                {generating ? (
-                  <>
-                    <Spinner size="sm" className="mr-2" />
-                    Regenerating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4 mr-2" />
-                    Regenerate
-                  </>
-                )}
+                {generating ? "Generating..." : "Regenerate"}
               </Button>
             </div>
             
             {aiProfile && aiProfile.metadata && (
               <div className="mt-2 text-xs text-muted-foreground flex gap-3">
-                <span>Generated in {aiProfile.metadata.generationTime.toFixed(1)}s</span>
+                {aiProfile.metadata.generationTime !== undefined && 
+                  <span>Generated in {aiProfile.metadata.generationTime.toFixed(1)}s</span>}
                 {aiProfile.metadata.characterCount && <span>· {aiProfile.metadata.characterCount} characters</span>}
-                <span>· Using {aiProfile.metadata.modelUsed}</span>
+                {aiProfile.metadata.modelUsed && <span>· Using {aiProfile.metadata.modelUsed}</span>}
               </div>
             )}
           </CardHeader>
@@ -903,8 +1113,18 @@ export default function AIProfilePage() {
             </svg>
             Back to Profile
           </Button>
+          
+          <Button 
+            onClick={() => router.push('/campaign/setup')}
+            className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700 text-white shadow-ai-glow transition-all duration-300"
+          >
+            Create Campaign
+            <svg className="w-4 h-4 ml-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </Button>
         </div>
       </div>
     </div>
   )
-} 
+}

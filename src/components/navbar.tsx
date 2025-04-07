@@ -50,15 +50,19 @@ export default function Navbar() {
   const navItems = [
     {
       name: "Profile",
-      path: "/profile/setup",
+      path: profileId ? `/profile/${profileId}` : "/profile/setup", 
+      hasDropdown: false
+    },
+    {
+      name: "Marketing",
+      path: "/marketing",
       hasDropdown: true,
       dropdownItems: [
-        { name: "Profile Setup", path: "/profile/setup" },
-        { name: "View Profile", path: "/profile" },
         { 
-          name: "AI Enhanced", 
-          path: profileId ? `/profile/${profileId}/ai-profile` : "/profile"
+          name: "AI Enhanced Profile", 
+          path: profileId ? `/profile/${profileId}/ai-profile` : "/profile/setup"
         },
+        // Future marketing items can be added here
       ],
     },
     { name: "Campaign", path: "/campaign/setup", hasDropdown: false },

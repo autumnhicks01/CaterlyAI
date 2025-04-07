@@ -19,9 +19,16 @@ export function ProfileLoader({ children }: { children: React.ReactNode }) {
 
       try {
         console.log("ProfileLoader: Loading profile data for user", user.id)
-        const response = await fetch("/api/profile/current")
+        const response = await fetch("/api/profile/current", {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          credentials: 'include' // Include cookies for authentication
+        })
         
         if (!response.ok) {
+          console.error(`ProfileLoader: API response error (${response.status})`, await response.text())
           throw new Error(`Failed to load profile: ${response.status}`)
         }
         
@@ -53,6 +60,10 @@ export function ProfileLoader({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         console.error("ProfileLoader: Error loading profile", err)
+        // Additional error logging to help diagnose the issue
+        if (err instanceof TypeError && err.message.includes('Failed to fetch')) {
+          console.error("ProfileLoader: Network error - make sure the API is running and accessible")
+        }
         setError(err instanceof Error ? err.message : "Unknown error loading profile")
       } finally {
         setIsLoading(false)

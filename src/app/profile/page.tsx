@@ -2,8 +2,8 @@ import { redirect } from 'next/navigation'
 import { createClient } from '@/utils/supabase/server'
 
 export default async function ProfileRedirect() {
-  // Get the current session
-  const supabase = createClient()
+  // Get the current session with await for createClient
+  const supabase = await createClient()
   const { data: { session }, error } = await supabase.auth.getSession()
   
   if (error || !session) {

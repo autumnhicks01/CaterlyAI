@@ -14,7 +14,7 @@ export async function POST() {
     }
     
     const userId = session.user.id;
-    const supabase = createClient();
+    const supabase = await createClient();
     
     // Get the existing profile first
     const { data: existingProfile, error: fetchError } = await supabase

@@ -2,41 +2,39 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 import { type Database } from '@/types/supabase'
 
-export function createClient() {
-  // Cookie store can sometimes be a promise or a value
-  const cookieStore = cookies()
+// This function now needs to be async since cookies() returns a Promise
+export async function createClient() {
+  // Await the cookies() function since it returns a Promise in Next.js 15
+  const cookieStore = await cookies()
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   
+  // Create the client with type safety
   return createServerClient<Database>(
     supabaseUrl,
     supabaseKey,
     {
       cookies: {
-        get(name: string) {
-          try {
-            return cookieStore.get(name)?.value
-          } catch (error) {
-            console.warn('Warning: Could not get cookie', error)
-            return undefined
-          }
+        get(name) {
+          return cookieStore.get(name)?.value
         },
-        set(name: string, value: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ name, value, ...options })
-          } catch (error) {
-            // This can fail in middleware as cookies is read-only
-            console.warn('Warning: Could not set cookie', error)
-          }
+        set(name, value, options) {
+          cookieStore.set({
+            name,
+            value,
+            ...options,
+            path: options?.path || '/'
+          })
         },
-        remove(name: string, options: CookieOptions) {
-          try {
-            cookieStore.set({ name, value: '', ...options })
-          } catch (error) {
-            // This can fail in middleware as cookies is read-only
-            console.warn('Warning: Could not delete cookie', error)
-          }
+        remove(name, options) {
+          cookieStore.set({
+            name,
+            value: '',
+            ...options,
+            path: options?.path || '/',
+            maxAge: 0
+          })
         },
       },
     }

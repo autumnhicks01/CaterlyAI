@@ -10,7 +10,19 @@ import { type Database } from '@/types/supabase'
 const createClient = () => {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  return createBrowserClient<Database>(supabaseUrl, supabaseKey)
+  return createBrowserClient<Database>(
+    supabaseUrl, 
+    supabaseKey,
+    {
+      cookieOptions: {
+        name: 'sb-auth-token',
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        path: '/'
+      }
+    }
+  )
 }
 
 // Define the context type
@@ -76,10 +88,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     console.log('Attempting signIn with:', { email });
     try {
-      // Clear any existing session first
-      await supabase.auth.signOut();
-      
-      // Sign in with password
+      // Sign in with password - removed forced signOut that was clearing cookies
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -96,6 +105,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Update the user state immediately upon successful login
         setUser(data.user);
         setSession(data.session);
+        router.refresh(); // Force router refresh to update server components
       }
       
       return { data, error };

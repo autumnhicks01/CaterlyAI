@@ -10,17 +10,25 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
 import { useCaterly, useCatering } from "../app/context/caterly-context"
 import { useRouter } from "next/navigation"
+import { useAuth } from "@/app/context/auth-context"
 
 export default function LandingPage() {
   const [mounted, setMounted] = useState(false)
   const router = useRouter()
+  const { user } = useAuth()
 
   useEffect(() => {
     setMounted(true)
   }, [])
 
-  const handleLogin = () => {
-    router.push('/login')
+  const handleGetStarted = () => {
+    if (user) {
+      // User is logged in, redirect to profile
+      router.push('/profile')
+    } else {
+      // User is not logged in, redirect to login
+      router.push('/login')
+    }
   }
 
   if (!mounted) {
@@ -64,29 +72,28 @@ export default function LandingPage() {
             <p className="text-xl md:text-2xl mb-10 text-foreground/80 max-w-3xl mx-auto">
               Discover leads, send personalized emails, and grow your catering business on autopilot with our cutting-edge AI technology.
             </p>
-            <Link href="/login">
-              <Button 
-                size="lg" 
-                className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-600 text-white shadow-ai-glow transition-all duration-300 transform hover:scale-105"
+            <Button 
+              onClick={handleGetStarted}
+              size="lg" 
+              className="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-500 hover:from-indigo-700 hover:via-purple-700 hover:to-pink-600 text-white shadow-ai-glow transition-all duration-300 transform hover:scale-105"
+            >
+              <span className="mr-2">Get Started</span>
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                width="24" 
+                height="24" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round" 
+                className="h-4 w-4"
               >
-                <span className="mr-2">Get Started</span>
-                <svg 
-                  xmlns="http://www.w3.org/2000/svg" 
-                  width="24" 
-                  height="24" 
-                  viewBox="0 0 24 24" 
-                  fill="none" 
-                  stroke="currentColor" 
-                  strokeWidth="2" 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                  className="h-4 w-4"
-                >
-                  <path d="M5 12h14"></path>
-                  <path d="m12 5 7 7-7 7"></path>
-                </svg>
-              </Button>
-            </Link>
+                <path d="M5 12h14"></path>
+                <path d="m12 5 7 7-7 7"></path>
+              </svg>
+            </Button>
           </div>
         </div>
 
