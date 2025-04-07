@@ -1,5 +1,10 @@
 import { Workflow } from '@mastra/core/workflows';
-import { searchBusinessesStep, enhanceBusinessesStep, validateBusinessesStep } from './steps';
+import { 
+  searchBusinessesStep, 
+  enhanceBusinessesStep, 
+  validateBusinessesStep,
+  enhanceBusinessesStreamingStep
+} from './steps';
 import { businessSearchInputSchema, businessSearchResultSchema, enhancedBusinessResultSchema } from './schemas';
 import { EventEmitter } from 'events';
 import { ContextSetupFn } from '@/lib/workflows/core';
@@ -20,7 +25,7 @@ export const businessSearchWorkflow = new Workflow({
   triggerSchema: businessSearchInputSchema,
 });
 
-// Define workflow structure
+// Define standard workflow structure
 businessSearchWorkflow
   // Step 1: Search for businesses using Google Places
   .step(searchBusinessesStep)
@@ -33,6 +38,27 @@ businessSearchWorkflow
 businessSearchWorkflow.commit();
 
 /**
+ * Streaming version of the Business Search Workflow
+ * This version uses the streaming enhancement step for faster results
+ */
+export const businessSearchStreamingWorkflow = new Workflow({
+  name: 'business-search-streaming',
+  triggerSchema: businessSearchInputSchema,
+});
+
+// Define streaming workflow structure
+businessSearchStreamingWorkflow
+  // Step 1: Search for businesses using Google Places 
+  .step(searchBusinessesStep)
+  // Step 2: Enhance business information with AI using streaming
+  .then(enhanceBusinessesStreamingStep)
+  // Step 3: Validate businesses for catering relevance
+  .then(validateBusinessesStep);
+
+// Commit the streaming workflow structure
+businessSearchStreamingWorkflow.commit();
+
+/**
  * Execute the Business Search workflow
  * 
  * @param query - Search query for businesses
@@ -40,6 +66,7 @@ businessSearchWorkflow.commit();
  * @param radius - Optional search radius in kilometers (default: 25)
  * @param progressCallback - Optional callback for progress updates
  * @param streamCallback - Optional callback for streaming text chunks
+ * @param useStreaming - Whether to use streaming enhancement (default: false)
  * @returns Results of the business search workflow
  */
 export async function executeBusinessSearch(
@@ -47,9 +74,12 @@ export async function executeBusinessSearch(
   location: string, 
   radius: number = 25,
   progressCallback?: (event: { step: string; status: string; message?: string }) => void,
-  streamCallback?: (chunk: string) => void
+  streamCallback?: (chunk: string) => void,
+  useStreaming: boolean = false
 ) {
-  const { runId, start } = businessSearchWorkflow.createRun();
+  // Choose the appropriate workflow based on the streaming parameter
+  const workflow = useStreaming ? businessSearchStreamingWorkflow : businessSearchWorkflow;
+  const { runId, start } = workflow.createRun();
   
   console.log(`Starting business search workflow (${runId}) for "${query}" in ${location}`);
   
@@ -74,18 +104,17 @@ export async function executeBusinessSearch(
     });
   }
   
-  // Set up context with progress emitter
-  const contextSetup: ContextSetupFn | undefined = hasCallbacks 
-    ? (context) => {
-        // The progressEmitter is already attached to the context
-      }
-    : undefined;
-  
   try {
-    // Run the workflow with only the triggerData parameter
-    // since our implementation of Mastra might not support the full interface yet
+    // Add the progress emitter to the context data
+    const contextData: Record<string, any> = {};
+    if (progressEmitter) {
+      contextData.progressEmitter = progressEmitter;
+    }
+    
+    // Run the workflow with the trigger data and optional context data
     const results = await start({
-      triggerData: { query, location, radius }
+      triggerData: { query, location, radius },
+      contextData
     });
     
     // Get the final results from the validate-businesses step

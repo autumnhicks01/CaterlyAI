@@ -1,4 +1,4 @@
-import { Step } from '@mastra/core/workflow';
+import { Step } from '@mastra/core/workflows';
 import { profileInputSchema, enhancedProfileSchema, profileOutputSchema } from './schemas';
 import { z } from 'zod';
 import { createClient } from '@supabase/supabase-js';

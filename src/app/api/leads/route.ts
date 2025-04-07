@@ -41,6 +41,15 @@ export async function GET(req: NextRequest) {
     );
   }
   
+  // Validate location is in the expected coordinate format (lat,lng)
+  const coordinateRegex = /^(-?\d+(\.\d+)?),(-?\d+(\.\d+)?)$/;
+  if (!coordinateRegex.test(location)) {
+    return NextResponse.json(
+      { error: "Location must be in coordinate format (lat,lng)" },
+      { status: 400 }
+    );
+  }
+  
   try {
     // Execute the business search workflow
     const result = await workflowManager.executeWorkflow('business-search', {
@@ -58,23 +67,35 @@ export async function GET(req: NextRequest) {
     
     // Check if we found any businesses
     const data = result.data as any;
+    console.log("Workflow result data:", data);
     
-    if (!data || !data.businesses || data.businesses.length === 0) {
+    // Extract businesses from the correct path in the result data
+    const businesses = data?.output?.businesses || data?.businesses || [];
+    console.log(`Extracted ${businesses.length} businesses from workflow result`);
+    
+    if (!businesses || businesses.length === 0) {
+      console.log("No businesses found in workflow result");
       return NextResponse.json(
         { message: "No matching businesses found", results: [] },
         { status: 200 }
       );
     }
     
-    // Return the search results
-    return NextResponse.json({
-      message: `Found ${data.count} businesses matching your search`,
-      results: data.businesses,
-      query: data.query,
-      location: data.location,
-      count: data.count,
+    console.log(`Found ${businesses.length} businesses to return`);
+    
+    // Return the search results with businesses in both fields for compatibility
+    const responseObj = {
+      message: `Found ${businesses.length} businesses matching your search`,
+      results: businesses,
+      businesses: businesses, // Include in both fields
+      query: data?.output?.query || data?.query || query,
+      location: data?.output?.location || data?.location || location,
+      count: businesses.length,
       runId: result.runId
-    });
+    };
+    
+    console.log("Sending API response with businesses");
+    return NextResponse.json(responseObj);
     
   } catch (error) {
     console.error("Error in business search API:", error);

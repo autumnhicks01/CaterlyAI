@@ -1,4 +1,4 @@
-import { Workflow } from '@mastra/core/workflow';
+import { Workflow } from '@mastra/core/workflows';
 import { validateProfileData, generateAIProfile, saveGeneratedProfile } from './steps';
 import { profileInputSchema, profileOutputSchema } from './schemas';
 

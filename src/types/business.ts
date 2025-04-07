@@ -5,6 +5,11 @@ export interface Business {
   id?: string;
   name: string;
   address: string;
+  // Direct fields from fast API
+  phone?: string;
+  website?: string;
+  category?: string;
+  // Legacy fields
   location?: {
     lat: number;
     lng: number;
@@ -41,7 +46,8 @@ export interface EnrichmentResponse {
 
 // Response from business search
 export interface BusinessSearchResponse {
-  businesses: Business[];
+  businesses?: Business[];
+  results?: Business[];
   count: number;
   location?: string;
   coordinates?: {
@@ -49,6 +55,7 @@ export interface BusinessSearchResponse {
     lng: number;
   };
   error?: string;
+  message?: string;
 }
 
 // Request for business search

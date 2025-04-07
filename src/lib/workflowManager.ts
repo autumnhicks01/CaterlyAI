@@ -1,8 +1,7 @@
 import { BusinessSearchInput } from '@/workflows/business-search/schemas';
-import { executeBusinessSearch } from '@/workflows/business-search';
-import { ProfileGenerationInput } from '@/workflows/profile-generation/schemas';
-import { executeProfileGeneration } from '@/workflows/profile-generation';
+import { executeBusinessSearch, businessSearchStreamingWorkflow } from '@/workflows/business-search';
 import { ContextSetupFn } from '@/lib/workflows/core';
+import { EventEmitter } from 'events';
 
 /**
  * WorkflowManager provides a unified interface for executing workflows
@@ -33,11 +32,11 @@ export class WorkflowManager {
         case 'business-search':
           return this.executeBusinessSearchWorkflow(data);
           
+        case 'business-search-streaming':
+          return this.executeBusinessSearchStreamingWorkflow(data);
+          
         case 'lead-enrichment':
           return this.executeLeadEnrichmentWorkflow(data, contextSetup);
-          
-        case 'profile-generation':
-          return this.executeProfileGenerationWorkflow(data, contextSetup);
           
         default:
           return {
@@ -64,6 +63,52 @@ export class WorkflowManager {
   }
   
   /**
+   * Execute the business search workflow with streaming
+   */
+  private async executeBusinessSearchStreamingWorkflow(data: BusinessSearchInput) {
+    const { query, location, radius } = data;
+    
+    console.log(`Executing streaming business search workflow for "${query}" in ${location}`);
+    
+    try {
+      // Create progress emitter that the workflow can use
+      const progressEmitter = new EventEmitter();
+      
+      // Create a new workflow run with the streaming workflow
+      const { runId, start } = businessSearchStreamingWorkflow.createRun();
+      
+      // Trigger data for the workflow
+      const triggerData = { query, location, radius };
+      
+      // Run the workflow with the progressEmitter
+      const result = await start({
+        triggerData
+      });
+      
+      console.log("Streaming workflow execution completed");
+      
+      // Get the final results from the validate-businesses step
+      const validationResults = result.results?.['validate-businesses'];
+      
+      return {
+        success: true,
+        data: {
+          status: 'success',
+          output: validationResults
+        },
+        runId
+      };
+    } catch (error) {
+      console.error("Error executing streaming business search workflow:", error);
+      
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+  
+  /**
    * Execute the lead enrichment workflow
    * Note: This will be implemented when the lead enrichment workflow is created
    */
@@ -73,24 +118,6 @@ export class WorkflowManager {
       success: false,
       error: "Lead enrichment workflow not yet implemented"
     };
-  }
-  
-  /**
-   * Execute the profile generation workflow
-   */
-  private async executeProfileGenerationWorkflow(data: any, contextSetup?: ContextSetupFn) {
-    // Extract profile data and user ID
-    const { userId, ...profileData } = data;
-    
-    if (!userId) {
-      return {
-        success: false,
-        error: "User ID is required for profile generation"
-      };
-    }
-    
-    // Execute the profile generation workflow
-    return executeProfileGeneration(profileData, userId);
   }
 }
 

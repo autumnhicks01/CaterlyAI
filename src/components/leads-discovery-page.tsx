@@ -41,10 +41,13 @@ const businessToLead = (business: Business) => {
     name: business.name,
     company: business.name,
     location: business.address,
-    category: business.hasEventSpace ? "Event Space" : (business.type || "Business"),
+    category: business.category || (business.hasEventSpace ? "Event Space" : (business.type || "Business")),
     description: business.description || "",
-    contact: business.contact,
-    website: business.contact?.website || "",
+    contact: business.contact || {
+      phone: business.phone,
+      website: business.website
+    },
+    website: business.website || business.contact?.website || "",
     address: business.address,
     hasEventSpace: business.hasEventSpace,
     photos: business.photos
@@ -59,6 +62,8 @@ export default function LeadsDiscoveryPage() {
   const [businesses, setBusinesses] = useState<Business[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [progress, setProgress] = useState<{step: string; status: string; count?: number; total?: number; message?: string} | null>(null)
+  const [receivedFirstBusiness, setReceivedFirstBusiness] = useState(false)
 
   // Load businesses on component mount
   useEffect(() => {
@@ -72,38 +77,57 @@ export default function LeadsDiscoveryPage() {
       }
 
       try {
+        setLoading(true);
+        setBusinesses([]);
+        setError(null);
+        setProgress({
+          step: 'search',
+          status: 'started',
+          message: 'Searching for businesses...'
+        });
+        
         // Build query from campaign categories
         const categoryQueries = campaign.targetCategories || [];
         let query = categoryQueries.length > 0 
           ? categoryQueries.join(" OR ") 
           : "event venue OR wedding venue";
 
-        // Execute the search
-        const result = await businessService.searchBusinesses({
+        console.log(`Starting fast search for: ${query} in location: ${campaign.coordinates?.lat},${campaign.coordinates?.lng}`);
+        
+        // Use fast search for immediate results
+        const results = await businessService.fastSearch({
           query,
+          location: campaign.coordinates 
+            ? `${campaign.coordinates.lat},${campaign.coordinates.lng}` 
+            : '',
           radius: campaign.radius,
           coordinates: campaign.coordinates as any
         });
-
-        // If component was unmounted during the search, do nothing
-        if (!mounted) return;
-
-        if (result.error) {
-          throw new Error(result.error);
+        
+        console.log("Fast search complete:", results);
+        
+        if (results.error) {
+          throw new Error(results.error);
         }
-
-        if (result.businesses && result.businesses.length > 0) {
-          // Limit to 20 results for faster rendering
-          const limitedResults = result.businesses.slice(0, 20);
-          setBusinesses(limitedResults);
-        } else {
-          setError("No businesses found matching your criteria.");
+        
+        // Update state with results
+        if (mounted) {
+          setBusinesses(results.businesses || []);
+          setLoading(false);
+          
+          // Update progress to show completion
+          setProgress({
+            step: 'complete',
+            status: 'completed',
+            count: results.businesses?.length || 0,
+            total: results.businesses?.length || 0,
+            message: `Found ${results.businesses?.length || 0} businesses matching your criteria`
+          });
         }
       } catch (err) {
         console.error("Error fetching businesses:", err);
-        setError("Failed to load businesses. Please try again later.");
-      } finally {
         if (mounted) {
+          setError(err instanceof Error ? err.message : "Failed to load businesses. Please try again later.");
           setLoading(false);
         }
       }
@@ -116,6 +140,14 @@ export default function LeadsDiscoveryPage() {
       mounted = false;
     };
   }, [campaign]);
+
+  // Add a useEffect to track changes to the businesses state
+  useEffect(() => {
+    console.log(`Businesses state updated: ${businesses.length} businesses available for display`);
+    if (businesses.length > 0) {
+      console.log("First business in state:", businesses[0]);
+    }
+  }, [businesses]);
 
   const toggleSelectAll = () => {
     if (selectAll) {
@@ -168,8 +200,8 @@ export default function LeadsDiscoveryPage() {
           throw new Error(enrichResult.error);
         }
         
-        // Extract enriched businesses
-        const enrichedBusinesses = enrichResult.businesses || [];
+        // Extract enriched businesses - check both businesses and results fields
+        const enrichedBusinesses = enrichResult.businesses || enrichResult.results || [];
         console.log(`Successfully enriched ${enrichedBusinesses.length} businesses`);
         
         let successMessage = "";
@@ -237,6 +269,46 @@ export default function LeadsDiscoveryPage() {
         <h1 className="text-3xl font-bold mb-2 text-center gradient-text">Discovered Leads</h1>
         <p className="text-center text-muted-foreground mb-6">AI-powered lead discovery for your catering business</p>
 
+        {/* Display streaming progress */}
+        {progress && (
+          <div className="max-w-5xl mx-auto mb-4">
+            <div className="p-3 rounded-md bg-secondary/30 border border-purple-500/20">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
+                  <span className="font-medium text-foreground/90">{progress.step}</span>
+                </div>
+                <Badge variant="outline" className={`
+                  ${progress.status === 'started' ? 'bg-amber-100/30 text-amber-800 border-amber-300' : ''}
+                  ${progress.status === 'processing' ? 'bg-blue-100/30 text-blue-800 border-blue-300' : ''}
+                  ${progress.status === 'completed' ? 'bg-green-100/30 text-green-800 border-green-300' : ''}
+                `}>
+                  {progress.status}
+                </Badge>
+              </div>
+              
+              {progress.message && (
+                <p className="text-sm text-muted-foreground">{progress.message}</p>
+              )}
+              
+              {progress.count !== undefined && progress.total !== undefined && (
+                <div className="mt-2">
+                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                    <div 
+                      className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${Math.min(100, (progress.count / progress.total) * 100)}%` }}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-xs mt-1 text-muted-foreground">
+                    <span>{progress.count} of {progress.total}</span>
+                    <span>{Math.min(100, Math.round((progress.count / progress.total) * 100))}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         <div className="max-w-5xl mx-auto">
           <Card className="border border-purple-500/20 bg-secondary/10 backdrop-blur-sm shadow-medium overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-secondary/30 py-3">
@@ -293,18 +365,22 @@ export default function LeadsDiscoveryPage() {
                 </div>
               ) : (
                 <div className="overflow-x-auto">
+                  {/* Log the rendering of businesses */}
+                  {(() => { console.log(`Rendering table with ${businesses.length} businesses`); return null; })()}
                   <table className="w-full">
                     <thead>
                       <tr className="border-b border-border/50 bg-secondary/20">
                         <th className="py-2 px-3 text-left w-10"></th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Name</th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Address</th>
+                        <th className="py-2 px-3 text-left font-medium text-foreground/90">Phone</th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Website</th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Category</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {businesses.map((business) => {
+                      {businesses.map((business, index) => {
+                        console.log(`Rendering business ${index}: ${business.name}`);
                         // Generate a safe ID for businesses without one
                         const businessId = business.id || `business-${business.name.replace(/\s+/g, '-').toLowerCase()}`;
                         
@@ -324,7 +400,35 @@ export default function LeadsDiscoveryPage() {
                             <td className="py-2 px-3 font-medium">{business.name}</td>
                             <td className="py-2 px-3 text-foreground/90 text-sm">{business.address}</td>
                             <td className="py-2 px-3 text-foreground/90 text-sm">
-                              {business.contact?.website ? (
+                              {business.phone ? (
+                                <a 
+                                  href={`tel:${business.phone}`} 
+                                  className="text-blue-500 hover:underline"
+                                >
+                                  {business.phone}
+                                </a>
+                              ) : business.contact?.phone ? (
+                                <a 
+                                  href={`tel:${business.contact.phone}`} 
+                                  className="text-blue-500 hover:underline"
+                                >
+                                  {business.contact.phone}
+                                </a>
+                              ) : (
+                                <span className="text-gray-400">Not available</span>
+                              )}
+                            </td>
+                            <td className="py-2 px-3 text-foreground/90 text-sm">
+                              {business.website ? (
+                                <a 
+                                  href={business.website} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                  className="text-blue-500 hover:underline"
+                                >
+                                  {business.website.replace(/^https?:\/\/(www\.)?/, '')}
+                                </a>
+                              ) : business.contact?.website ? (
                                 <a 
                                   href={business.contact.website} 
                                   target="_blank" 
@@ -339,7 +443,7 @@ export default function LeadsDiscoveryPage() {
                             </td>
                             <td className="py-2 px-3 text-foreground/90">
                               <Badge variant="outline" className="bg-secondary/40 border-purple-500/20 text-foreground/80">
-                                {business.hasEventSpace ? "Event Space" : (business.type || "Business")}
+                                {business.category ? business.category : business.hasEventSpace ? "Event Space" : (business.type || "Business")}
                               </Badge>
                             </td>
                           </tr>
