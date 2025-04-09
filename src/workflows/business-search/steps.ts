@@ -1,6 +1,6 @@
 import { Step } from '@mastra/core/workflows';
 import { searchBusinessesWithGooglePlaces } from '@/tools/googlePlaces';
-import { businessAgent, enhanceBusinessBatch, enhanceBusinessesWithStreaming } from '@/agents/businessAgent';
+import { businessAgent, enhanceBusinessBatch } from '@/agents/businessAgent';
 import { BusinessSearchInput, BusinessSearchResult, EnhancedBusinessResult } from './schemas';
 import { stringify, extractJsonFromLlmResponse } from '@/lib/utils';
 
@@ -29,8 +29,9 @@ export const searchBusinessesStep = new Step({
       console.log(`Found ${result.businesses.length} businesses matching search criteria`);
       
       // Emit progress event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('progress', {
+      const progressEmitter = (context as any).progressEmitter;
+      if (progressEmitter) {
+        progressEmitter.emit('progress', {
           step: 'search-businesses',
           status: 'completed',
           count: result.businesses.length,
@@ -43,8 +44,9 @@ export const searchBusinessesStep = new Step({
       console.error('Error in searchBusinessesStep:', error);
       
       // Emit error event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('error', {
+      const progressEmitter = (context as any).progressEmitter;
+      if (progressEmitter) {
+        progressEmitter.emit('error', {
           step: 'search-businesses',
           error: error instanceof Error ? error.message : String(error)
         });
@@ -78,8 +80,9 @@ export const enhanceBusinessesStep = new Step({
     console.log(`Enhancing ${businesses.length} businesses with additional details using parallel processing`);
     
     // Check if context has a progressEmitter before using it
-    if (context['progressEmitter']) {
-      (context['progressEmitter'] as any).emit('progress', {
+    const progressEmitter = (context as any).progressEmitter;
+    if (progressEmitter) {
+      progressEmitter.emit('progress', {
         step: 'enhance-businesses',
         status: 'started',
         count: businesses.length,
@@ -105,11 +108,11 @@ export const enhanceBusinessesStep = new Step({
       );
       
       // Regular progress updates if context has progressEmitter
-      if (context['progressEmitter']) {
+      if (progressEmitter) {
         let processedCount = 0;
         const totalCount = businesses.length;
         const updateInterval = setInterval(() => {
-          (context['progressEmitter'] as any).emit('progress', {
+          progressEmitter.emit('progress', {
             step: 'enhance-businesses',
             status: 'processing',
             count: processedCount,
@@ -139,8 +142,8 @@ export const enhanceBusinessesStep = new Step({
       };
       
       // Emit completion event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('progress', {
+      if (progressEmitter) {
+        progressEmitter.emit('progress', {
           step: 'enhance-businesses',
           status: 'completed',
           count: result.businesses.length,
@@ -153,8 +156,8 @@ export const enhanceBusinessesStep = new Step({
       console.error('Error in parallel enhanceBusinessesStep:', error);
       
       // Emit error event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('error', {
+      if (progressEmitter) {
+        progressEmitter.emit('error', {
           step: 'enhance-businesses',
           error: error instanceof Error ? error.message : String(error)
         });
@@ -195,8 +198,9 @@ export const enhanceBusinessesStreamingStep = new Step({
     console.log(`Enhancing ${businesses.length} businesses with streaming results`);
     
     // Check if context has a progressEmitter before using it
-    if (context['progressEmitter']) {
-      (context['progressEmitter'] as any).emit('progress', {
+    const progressEmitter = (context as any).progressEmitter;
+    if (progressEmitter) {
+      progressEmitter.emit('progress', {
         step: 'enhance-businesses-streaming',
         status: 'started',
         count: businesses.length,
@@ -205,65 +209,27 @@ export const enhanceBusinessesStreamingStep = new Step({
     }
     
     try {
-      // Get the streaming response
-      const { stream } = await enhanceBusinessesWithStreaming(businesses);
+      // Since enhanceBusinessesWithStreaming is not available, use enhanceBusinessBatch instead
+      console.log(`Using batch enhancement instead of streaming for ${businesses.length} businesses`);
       
-      // Convert the stream to collected results
-      const reader = stream.getReader();
-      const enhancedBusinesses: any[] = [];
-      let done = false;
+      // Process businesses with enhanceBusinessBatch
+      const enhancedBusinesses = await enhanceBusinessBatch(businesses, 0);
       
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
+      // Update progress
+      if (progressEmitter) {
+        progressEmitter.emit('progress', {
+          step: 'enhance-businesses-streaming',
+          status: 'completed',
+          count: enhancedBusinesses.length,
+          total: businesses.length,
+          message: `Enhanced ${enhancedBusinesses.length} businesses`
+        });
         
-        if (doneReading) {
-          done = true;
-          break;
-        }
-        
-        // Parse the chunk as a UTF-8 string
-        const chunk = new TextDecoder().decode(value);
-        
-        // Each line is a JSON object
-        const lines = chunk.split('\n').filter(line => line.trim());
-        
-        for (const line of lines) {
-          try {
-            const data = JSON.parse(line);
-            
-            // Handle progress updates
-            if (data.type === 'progress' && context['progressEmitter']) {
-              (context['progressEmitter'] as any).emit('progress', {
-                step: 'enhance-businesses-streaming',
-                status: 'processing',
-                count: data.current,
-                total: data.total,
-                message: data.message
-              });
-            }
-            
-            // Handle business data
-            if (data.type === 'business' && data.data) {
-              enhancedBusinesses.push(data.data);
-              
-              // Emit progress for each business added
-              if (context['progressEmitter']) {
-                (context['progressEmitter'] as any).emit('progress', {
-                  step: 'enhance-businesses-streaming',
-                  status: 'processing',
-                  count: enhancedBusinesses.length,
-                  total: businesses.length,
-                  message: `Processed ${enhancedBusinesses.length} of ${businesses.length} businesses`
-                });
-              }
-            }
-          } catch (error) {
-            console.error('Error parsing stream chunk:', error);
-          }
+        // Emit business data events for each business
+        for (const business of enhancedBusinesses) {
+          progressEmitter.emit('business', business);
         }
       }
-      
-      console.log(`Successfully enhanced ${enhancedBusinesses.length} businesses via streaming`);
       
       const result: EnhancedBusinessResult = {
         businesses: enhancedBusinesses,
@@ -272,23 +238,14 @@ export const enhanceBusinessesStreamingStep = new Step({
         query: searchResults.query
       };
       
-      // Emit completion event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('progress', {
-          step: 'enhance-businesses-streaming',
-          status: 'completed',
-          count: result.businesses.length,
-          message: `Enhanced ${result.businesses.length} businesses with streaming`
-        });
-      }
-      
+      console.log(`Successfully enhanced ${result.businesses.length} businesses`);
       return result;
     } catch (error) {
-      console.error('Error in streaming enhanceBusinessesStep:', error);
+      console.error('Error in enhanceBusinessesStreamingStep:', error);
       
       // Emit error event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('error', {
+      if (progressEmitter) {
+        progressEmitter.emit('error', {
           step: 'enhance-businesses-streaming',
           error: error instanceof Error ? error.message : String(error)
         });
@@ -327,8 +284,9 @@ export const validateBusinessesStep = new Step({
     console.log(`Validating ${enhancedResults.businesses.length} businesses for catering relevance`);
     
     // Emit progress event if context has progressEmitter
-    if (context['progressEmitter']) {
-      (context['progressEmitter'] as any).emit('progress', {
+    const progressEmitter = (context as any).progressEmitter;
+    if (progressEmitter) {
+      progressEmitter.emit('progress', {
         step: 'validate-businesses',
         status: 'started',
         count: enhancedResults.businesses.length,
@@ -365,8 +323,8 @@ export const validateBusinessesStep = new Step({
       };
       
       // Emit completion event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('progress', {
+      if (progressEmitter) {
+        progressEmitter.emit('progress', {
           step: 'validate-businesses',
           status: 'completed',
           count: result.businesses.length,
@@ -379,8 +337,8 @@ export const validateBusinessesStep = new Step({
       console.error('Error in validateBusinessesStep:', error);
       
       // Emit error event if context has progressEmitter
-      if (context['progressEmitter']) {
-        (context['progressEmitter'] as any).emit('error', {
+      if (progressEmitter) {
+        progressEmitter.emit('error', {
           step: 'validate-businesses',
           error: error instanceof Error ? error.message : String(error)
         });

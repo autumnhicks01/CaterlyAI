@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -46,6 +46,7 @@ interface Lead {
 
 export default function EnrichedLeadsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [leads, setLeads] = useState<Lead[]>([])
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   const [selectAll, setSelectAll] = useState(false)
@@ -55,43 +56,109 @@ export default function EnrichedLeadsPage() {
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [messageType, setMessageType] = useState<'success' | 'warning' | 'error'>('success')
+  const [loadingMessage, setLoadingMessage] = useState<string>('')
 
-  // Check for messages in URL
+  // Fetch initial data and check for enrichment status
   useEffect(() => {
-    // Get messages from URL if available
-    if (typeof window !== 'undefined') {
-      const urlParams = new URLSearchParams(window.location.search);
+    // Check URL query parameters for loading state
+    const status = searchParams.get('status');
+    const count = searchParams.get('count');
+    
+    if (status === 'loading' && count) {
+      setIsLoading(true);
+      setLoadingMessage(`Enriching ${count} leads...`);
       
-      // Check for success message
-      const successParam = urlParams.get('success');
-      if (successParam) {
-        setSuccessMessage(decodeURIComponent(successParam));
-        // Check if there's a status parameter (success or warning)
-        const statusParam = urlParams.get('status');
-        setMessageType(statusParam === 'warning' ? 'warning' : 'success');
-      }
-      
-      // Check for error message
-      const errorParam = urlParams.get('error');
-      if (errorParam) {
-        setSuccessMessage(decodeURIComponent(errorParam));
-        setMessageType('error');
-      }
-      
-      // Clear the parameter from the URL after reading it
-      if (successParam || errorParam) {
-        const newUrl = window.location.pathname;
-        window.history.replaceState({}, document.title, newUrl);
+      // Check localStorage for enrichment status updates
+      const checkEnrichmentStatus = () => {
+        const enrichmentStatus = localStorage.getItem('enrichment_status');
+        const enrichmentCount = localStorage.getItem('enrichment_count');
+        const enrichmentError = localStorage.getItem('enrichment_error');
+        const startTime = localStorage.getItem('enrichment_start_time');
         
-        // Auto-clear the message after 5 seconds
-        const timer = setTimeout(() => {
-          setSuccessMessage(null);
-        }, 5000);
-        
-        return () => clearTimeout(timer);
-      }
+        // If we have a status, process it
+        if (enrichmentStatus) {
+          if (enrichmentStatus === 'success') {
+            setIsLoading(false);
+            setLoadingMessage('');
+            fetchLeads();
+            setSuccessMessage(`Successfully enriched ${enrichmentCount} leads`);
+            setMessageType('success');
+            
+            // Clear localStorage status
+            localStorage.removeItem('enrichment_status');
+            localStorage.removeItem('enrichment_count');
+            localStorage.removeItem('enrichment_time');
+            localStorage.removeItem('enrichment_error');
+            localStorage.removeItem('enrichment_start_time');
+            
+            // Update URL to remove loading state
+            router.replace('/leads/enriched');
+          } else if (enrichmentStatus === 'error') {
+            setIsLoading(false);
+            setLoadingMessage('');
+            setError(enrichmentError || 'Failed to enrich leads');
+            setMessageType('error');
+            
+            // Clear localStorage status
+            localStorage.removeItem('enrichment_status');
+            localStorage.removeItem('enrichment_count');
+            localStorage.removeItem('enrichment_time');
+            localStorage.removeItem('enrichment_error');
+            localStorage.removeItem('enrichment_start_time');
+            
+            // Update URL to remove loading state
+            router.replace('/leads/enriched');
+          }
+          
+          // Clear the checking interval
+          clearInterval(statusInterval);
+        } else if (startTime) {
+          // Calculate how long we've been waiting
+          const start = new Date(startTime);
+          const now = new Date();
+          const elapsedSeconds = Math.floor((now.getTime() - start.getTime()) / 1000);
+          
+          // If we've been waiting more than 2 minutes, show a timeout error
+          if (elapsedSeconds > 120) {
+            setIsLoading(false);
+            setLoadingMessage('');
+            setError('Enrichment timed out. Please try again with fewer leads.');
+            setMessageType('error');
+            
+            // Clear localStorage status
+            localStorage.removeItem('enrichment_status');
+            localStorage.removeItem('enrichment_count');
+            localStorage.removeItem('enrichment_time');
+            localStorage.removeItem('enrichment_error');
+            localStorage.removeItem('enrichment_start_time');
+            
+            // Update URL to remove loading state
+            router.replace('/leads/enriched');
+            
+            // Clear the interval
+            clearInterval(statusInterval);
+          } else {
+            // Update loading message with elapsed time
+            setLoadingMessage(`Enriching ${count} leads... (${elapsedSeconds} seconds)`);
+          }
+        }
+      };
+      
+      // Check status every 2 seconds
+      const statusInterval = setInterval(checkEnrichmentStatus, 2000);
+      
+      // Initial check
+      checkEnrichmentStatus();
+      
+      // Clean up interval on unmount
+      return () => {
+        clearInterval(statusInterval);
+      };
+    } else {
+      // Normal page load - fetch leads
+      fetchLeads();
     }
-  }, []);
+  }, [searchParams, router]);
 
   // Fetch saved leads from Supabase
   async function fetchLeads() {
@@ -157,8 +224,12 @@ export default function EnrichedLeadsPage() {
     
     setIsEnriching(true);
     setError(null);
+    setSuccessMessage(null);
+    
+    console.log(`Starting enrichment process for ${selectedLeads.length} selected leads:`, selectedLeads);
     
     try {
+      console.log(`Calling /api/leads/enrich API with ${selectedLeads.length} lead IDs`);
       const response = await fetch('/api/leads/enrich', {
         method: 'POST',
         headers: {
@@ -169,10 +240,18 @@ export default function EnrichedLeadsPage() {
         }),
       });
       
+      console.log(`API response status: ${response.status}`);
+      
+      const responseData = await response.json();
+      console.log("API response data:", responseData);
+      
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || 'Failed to enrich leads');
+        throw new Error(responseData.error || 'Failed to enrich leads');
       }
+      
+      // Set success message
+      setSuccessMessage(`Successfully enriched ${selectedLeads.length} leads`);
+      setMessageType('success');
       
       // Refresh leads after enrichment
       await fetchLeads();
@@ -182,6 +261,7 @@ export default function EnrichedLeadsPage() {
     } catch (err) {
       console.error('Error enriching leads:', err);
       setError(err instanceof Error ? err.message : 'An error occurred while enriching leads');
+      setMessageType('error');
     } finally {
       setIsEnriching(false);
     }
@@ -204,6 +284,13 @@ export default function EnrichedLeadsPage() {
       return 'bg-gradient-to-r from-red-500 to-rose-600 text-white'
     }
   }
+
+  // Truncate URL to a maximum length
+  const truncateUrl = (url: string | null, maxLength: number = 180): string => {
+    if (!url) return 'Not available';
+    if (url.length <= maxLength) return url;
+    return url.slice(0, maxLength) + '...';
+  };
 
   return (
     <div className="container mx-auto px-4 py-12 relative">
@@ -263,15 +350,6 @@ export default function EnrichedLeadsPage() {
                   </div>
                 )}
                 <Button 
-                  onClick={enrichSelectedLeads}
-                  size="sm"
-                  variant="outline"
-                  disabled={isEnriching || selectedLeads.length === 0}
-                  className="border-blue-500/20 hover:bg-blue-500/10 mr-2"
-                >
-                  Enrich with AI
-                </Button>
-                <Button 
                   onClick={fetchLeads} 
                   size="sm"
                   variant="outline"
@@ -297,7 +375,7 @@ export default function EnrichedLeadsPage() {
                     <div className="absolute inset-0 rounded-full border-t-4 border-l-4 border-blue-500 animate-spin"></div>
                     <div className="absolute inset-1 rounded-full bg-blue-500/10 animate-pulse"></div>
                   </div>
-                  <p className="text-lg mt-6 gradient-text-blue">Loading leads...</p>
+                  <p className="text-lg mt-6 gradient-text-blue">{loadingMessage}</p>
                 </div>
               ) : leads.length === 0 ? (
                 <div className="py-16 px-4 text-center">
@@ -365,17 +443,24 @@ export default function EnrichedLeadsPage() {
                           <td className="py-3 px-4 text-foreground/90">
                             {lead.website_url ? (
                               <a 
-                                href={lead.website_url.startsWith('http') ? lead.website_url : `https://${lead.website_url}`} 
+                                href={lead.website_url.startsWith('http') ? lead.website_url : `https://${lead.website_url}`}
                                 target="_blank" 
                                 rel="noopener noreferrer"
-                                className="text-blue-500 hover:text-blue-600 flex items-center"
-                                title={lead.website_url}
+                                className="text-blue-500 hover:underline block max-w-[180px] text-ellipsis whitespace-nowrap overflow-hidden"
                               >
-                                <span className="truncate">{lead.website_url.replace(/^https?:\/\//, '')}</span>
-                                <ExternalLinkIcon className="ml-1 flex-shrink-0 h-3 w-3" />
+                                {truncateUrl(lead.website_url)}
+                              </a>
+                            ) : lead.enrichment_data?.website ? (
+                              <a 
+                                href={lead.enrichment_data.website.startsWith('http') ? lead.enrichment_data.website : `https://${lead.enrichment_data.website}`}
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="text-blue-500 hover:underline block max-w-[180px] text-ellipsis whitespace-nowrap overflow-hidden"
+                              >
+                                {truncateUrl(lead.enrichment_data.website)}
                               </a>
                             ) : (
-                              <span className="text-muted-foreground italic">Not available</span>
+                              <span className="text-gray-400">Not available</span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-foreground/90 truncate">
@@ -445,6 +530,29 @@ export default function EnrichedLeadsPage() {
           </Card>
         </div>
       </div>
+
+      {isEnriching && (
+        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-background rounded-lg p-8 shadow-xl max-w-md w-full border border-blue-500/20">
+            <div className="flex flex-col items-center text-center">
+              <div className="relative w-16 h-16 mb-4">
+                <div className="absolute inset-0 rounded-full border-4 border-background/20"></div>
+                <div className="absolute inset-0 rounded-full border-t-4 border-l-4 border-blue-500 animate-spin"></div>
+                <div className="absolute inset-1 rounded-full bg-blue-500/10 animate-pulse"></div>
+              </div>
+              <h3 className="text-xl font-semibold mb-2 gradient-text-blue">
+                AI Enrichment in Progress
+              </h3>
+              <p className="text-muted-foreground mb-4">
+                Please wait while our AI analyzes website content and enriches your leads with detailed information.
+              </p>
+              <div className="w-full bg-secondary/50 h-2 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 animate-progress"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 

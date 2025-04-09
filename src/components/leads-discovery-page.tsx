@@ -9,6 +9,12 @@ import { useCaterly } from "../app/context/caterly-context"
 import { Badge } from "@/components/ui/badge"
 import { Business } from "@/types/business"
 import { businessService } from "@/lib/services/businessService"
+import { useToast } from "@/hooks/use-toast"
+
+// Extended Business interface with website_url property
+interface EnrichableBusiness extends Business {
+  website_url?: string;
+}
 
 // Simple spinner component
 function Spinner({ className = "", size = "lg" }: { className?: string, size?: "sm" | "default" | "lg" | "xl" }) {
@@ -26,6 +32,48 @@ function Spinner({ className = "", size = "lg" }: { className?: string, size?: "
       aria-label="Loading"
     />
   );
+}
+
+/**
+ * Smart URL truncation function
+ * Truncates long URLs intelligently while keeping the domain and important path parts
+ */
+function truncateUrl(url: string, maxLength: number = 30): string {
+  // Remove protocol and www.
+  let cleanUrl = url.replace(/^https?:\/\/(www\.)?/, '');
+  
+  // If URL is already short enough, return it
+  if (cleanUrl.length <= maxLength) {
+    return cleanUrl;
+  }
+  
+  // Extract domain name (everything before the first slash)
+  const domainMatch = cleanUrl.match(/^([^/]+)/);
+  const domain = domainMatch ? domainMatch[1] : cleanUrl;
+  
+  // If the domain alone is too long, truncate it
+  if (domain.length >= maxLength - 3) {
+    return domain.substring(0, maxLength - 3) + "...";
+  }
+  
+  // Get the path part
+  const path = cleanUrl.substring(domain.length);
+  
+  // If we have a path, truncate it in the middle
+  if (path) {
+    // Always show the domain
+    const availableChars = maxLength - domain.length - 3; // 3 chars for "..."
+    
+    if (availableChars <= 0) {
+      return domain;
+    }
+    
+    // Show the beginning of the path (including the first slash)
+    const pathStart = path.substring(0, Math.floor(availableChars / 2));
+    return domain + pathStart + "...";
+  }
+  
+  return domain;
 }
 
 // Map Business type to Lead type for context compatibility
@@ -57,6 +105,7 @@ const businessToLead = (business: Business) => {
 export default function LeadsDiscoveryPage() {
   const router = useRouter()
   const { setLeads, campaign } = useCaterly()
+  const { toast } = useToast()
   const [selectedLeads, setSelectedLeads] = useState<string[]>([])
   const [selectAll, setSelectAll] = useState(false)
   const [businesses, setBusinesses] = useState<Business[]>([])
@@ -64,6 +113,7 @@ export default function LeadsDiscoveryPage() {
   const [error, setError] = useState<string | null>(null)
   const [progress, setProgress] = useState<{step: string; status: string; count?: number; total?: number; message?: string} | null>(null)
   const [receivedFirstBusiness, setReceivedFirstBusiness] = useState(false)
+  const [isEnrichingLeads, setIsEnrichingLeads] = useState(false)
 
   // Load businesses on component mount
   useEffect(() => {
@@ -174,40 +224,138 @@ export default function LeadsDiscoveryPage() {
   }
 
   const handleEnrichLeads = async () => {
+    if (selectedLeads.length === 0) {
+      setIsEnrichingLeads(false);
+      toast({
+        title: 'No leads selected',
+        description: 'Please select at least one lead to enrich.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsEnrichingLeads(true);
+    
     try {
-      setLoading(true);
-      setError(null);
-      
-      // Select the businesses that match the selected IDs
+      // Convert selectedLeads (string IDs) to actual business objects
       const selectedBusinesses = businesses.filter(business => 
         selectedLeads.includes(business.id || '')
       );
       
-      if (selectedBusinesses.length === 0) {
-        setError("Please select at least one lead to enrich.");
-        setLoading(false);
+      // Log selected businesses with their website URLs
+      console.log(`Enriching ${selectedBusinesses.length} leads with the following details:`);
+      selectedBusinesses.forEach((business) => {
+        const b = business as EnrichableBusiness;
+        console.log(`Lead: ${business.name}, Website URL: ${b.website_url || business.website || '<MISSING>'}`);
+      });
+      
+      // Make sure we have website URLs for all leads - this is critical for enrichment
+      const businessesWithoutWebsites = selectedBusinesses.filter(
+        (business) => {
+          const b = business as EnrichableBusiness;
+          return !b.website_url && !business.website && !business.contact?.website;
+        }
+      );
+      
+      if (businessesWithoutWebsites.length > 0) {
+        console.error('Some leads are missing website URLs:', 
+          businessesWithoutWebsites.map(b => b.name).join(', '));
+        
+        toast({
+          title: 'Missing website URLs',
+          description: `${businessesWithoutWebsites.length} leads are missing website URLs and cannot be enriched.`,
+          variant: 'destructive',
+        });
+        
+        setIsEnrichingLeads(false);
         return;
       }
-      
-      console.log(`Starting enrichment process for ${selectedBusinesses.length} leads`);
-      
-      // First, enrich the data using the AI agent via OpenAI
-      // This step adds enrichment data to the business objects
-      try {
-        const enrichResult = await businessService.enrichBusinesses(selectedBusinesses);
+
+      // Ensure all leads have website_url field properly set
+      const businessesToEnrich = selectedBusinesses.map(business => {
+        const b = business as EnrichableBusiness;
         
-        if (enrichResult.error) {
-          throw new Error(enrichResult.error);
+        // If website_url is missing but website is available, use that
+        if (!b.website_url && business.website) {
+          console.log(`Setting website_url for ${business.name} from website field: ${business.website}`);
+          return {
+            ...business,
+            website_url: business.website
+          } as EnrichableBusiness;
         }
         
-        // Extract enriched businesses - check both businesses and results fields
-        const enrichedBusinesses = enrichResult.businesses || enrichResult.results || [];
-        console.log(`Successfully enriched ${enrichedBusinesses.length} businesses`);
+        // If contact.website is available but no website_url, use that
+        if (!b.website_url && business.contact?.website) {
+          console.log(`Setting website_url for ${business.name} from contact.website: ${business.contact.website}`);
+          return {
+            ...business,
+            website_url: business.contact.website
+          } as EnrichableBusiness;
+        }
         
-        let successMessage = "";
-        let saveSuccessful = false;
+        return business as EnrichableBusiness;
+      });
+
+      // Store the leads for enrichment and add timestamp to track how long it takes
+      console.log(`Storing ${businessesToEnrich.length} leads for enrichment at ${new Date().toISOString()}`);
+      localStorage.setItem('enriching_leads_count', businessesToEnrich.length.toString());
+      localStorage.setItem('enrichment_start_time', new Date().toISOString());
+      
+      // Batch leads if more than 3 to avoid overwhelming the API
+      let batchSize = 3;
+      let batches = [];
+      
+      // If 3 or fewer, just use a single batch
+      if (businessesToEnrich.length <= batchSize) {
+        batches = [businessesToEnrich];
+      } else {
+        // Create batches of specified size
+        for (let i = 0; i < businessesToEnrich.length; i += batchSize) {
+          batches.push(businessesToEnrich.slice(i, i + batchSize));
+        }
+      }
+      
+      console.log(`Split ${businessesToEnrich.length} leads into ${batches.length} batches of max ${batchSize}`);
+      
+      // Immediately redirect to the enriched leads page with loading state
+      router.push(`/leads/enriched?status=loading&count=${businessesToEnrich.length}`);
+      
+      // Process each batch sequentially to avoid rate limiting
+      let allEnrichedBusinesses: Business[] = [];
+      let batchNum = 1;
+      
+      for (const batch of batches) {
+        console.log(`Processing batch ${batchNum} of ${batches.length} with ${batch.length} leads`);
         
-        // Now save the enriched businesses to Supabase
+        try {
+          // Use the business service to enrich the batch
+          const batchResult = await businessService.enrichBusinesses(batch);
+          
+          if (batchResult.error) {
+            console.error(`Error in batch ${batchNum}:`, batchResult.error);
+            // Continue with next batch despite errors
+          } else if (batchResult.businesses && batchResult.businesses.length > 0) {
+            console.log(`Batch ${batchNum} returned ${batchResult.businesses.length} enriched businesses`);
+            allEnrichedBusinesses = [...allEnrichedBusinesses, ...batchResult.businesses];
+          } else {
+            console.warn(`Batch ${batchNum} returned no enriched businesses`);
+          }
+        } catch (batchError) {
+          console.error(`Exception in batch ${batchNum}:`, batchError);
+          // Continue processing other batches despite errors
+        }
+        
+        batchNum++;
+      }
+      
+      // All batches complete - log results
+      console.log(`All batches processed. Total enriched: ${allEnrichedBusinesses.length} of ${businessesToEnrich.length}`);
+      
+      // Update enrichment status in localStorage
+      if (allEnrichedBusinesses.length > 0) {
+        console.log('At least some leads were enriched, attempting to save to database');
+        
+        // Save the enriched leads to the database
         try {
           const saveResponse = await fetch('/api/leads/save', {
             method: 'POST',
@@ -215,47 +363,46 @@ export default function LeadsDiscoveryPage() {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              businesses: enrichedBusinesses,
-              skipEnrichment: false // Indicating these are already enriched
+              leads: allEnrichedBusinesses,
+              skipEnrichment: true, // Skip enrichment on save since we've already done it
             }),
           });
-          
+
           if (!saveResponse.ok) {
             const errorData = await saveResponse.json();
-            console.error('Save response error:', errorData);
-            successMessage = `Leads were enriched but couldn't be saved. ${errorData.error || ''}`;
+            console.error('Error saving enriched leads:', errorData);
+            localStorage.setItem('enrichment_status', 'error');
+            localStorage.setItem('enrichment_error', `Database save failed: ${JSON.stringify(errorData)}`);
           } else {
-            // Get the saved leads data
-            const saveData = await saveResponse.json();
-            console.log('Leads saved successfully:', saveData);
-            saveSuccessful = true;
-            successMessage = `Successfully enriched and saved ${saveData.count || selectedBusinesses.length} leads`;
+            const saveResult = await saveResponse.json();
+            console.log('Leads successfully enriched and saved to database', saveResult);
+            
+            // Store success status in localStorage for the enriched page to display
+            localStorage.setItem('enrichment_status', 'success');
+            localStorage.setItem('enrichment_count', allEnrichedBusinesses.length.toString());
+            localStorage.setItem('enrichment_time', new Date().toISOString());
           }
-        } catch (saveErr) {
-          console.error("Error in save process:", saveErr);
-          successMessage = "Leads were enriched but couldn't be saved due to a server error";
+        } catch (saveError) {
+          console.error('Exception saving enriched leads:', saveError);
+          localStorage.setItem('enrichment_status', 'error');
+          localStorage.setItem('enrichment_error', `Save exception: ${saveError instanceof Error ? saveError.message : String(saveError)}`);
         }
-        
-        // Clear loading state before redirecting
-        setLoading(false);
-        
-        // Navigate to enriched leads page with appropriate message
-        router.push(`/leads/enriched?success=${encodeURIComponent(successMessage)}&status=${saveSuccessful ? 'success' : 'warning'}`);
-      } catch (err) {
-        console.error("Error in enrichment process:", err);
-        setError(err instanceof Error ? err.message : 'An error occurred while processing leads');
-        setLoading(false);
-        
-        // Still redirect to enriched leads page, but with error message
-        router.push(`/leads/enriched?error=${encodeURIComponent(err instanceof Error ? err.message : 'Failed to enrich leads')}`);
+      } else {
+        console.error('No leads were successfully enriched');
+        localStorage.setItem('enrichment_status', 'error');
+        localStorage.setItem('enrichment_error', 'No leads were successfully enriched');
       }
-    } catch (err) {
-      console.error("Error handling leads:", err);
-      setError(err instanceof Error ? err.message : 'An error occurred while handling leads');
-      setLoading(false);
       
-      // Always redirect to enriched leads page
-      router.push('/leads/enriched?error=Failed to process leads');
+      // Clear selection state
+      setSelectedLeads([]);
+      setIsEnrichingLeads(false);
+
+    } catch (error) {
+      console.error('Error in handleEnrichLeads:', error);
+      setIsEnrichingLeads(false);
+      // Store error status in localStorage for the enriched page to display
+      localStorage.setItem('enrichment_status', 'error');
+      localStorage.setItem('enrichment_error', error instanceof Error ? error.message : 'Failed to enrich leads');
     }
   };
 
@@ -374,7 +521,7 @@ export default function LeadsDiscoveryPage() {
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Name</th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Address</th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Phone</th>
-                        <th className="py-2 px-3 text-left font-medium text-foreground/90">Website</th>
+                        <th className="py-2 px-3 text-left font-medium text-foreground/90 w-44">Website</th>
                         <th className="py-2 px-3 text-left font-medium text-foreground/90">Category</th>
                       </tr>
                     </thead>
@@ -383,6 +530,9 @@ export default function LeadsDiscoveryPage() {
                         console.log(`Rendering business ${index}: ${business.name}`);
                         // Generate a safe ID for businesses without one
                         const businessId = business.id || `business-${business.name.replace(/\s+/g, '-').toLowerCase()}`;
+                        
+                        const website = business.website || business.contact?.website;
+                        const truncatedWebsite = website ? truncateUrl(website, 28) : '';
                         
                         return (
                           <tr 
@@ -419,23 +569,15 @@ export default function LeadsDiscoveryPage() {
                               )}
                             </td>
                             <td className="py-2 px-3 text-foreground/90 text-sm">
-                              {business.website ? (
+                              {website ? (
                                 <a 
-                                  href={business.website} 
+                                  href={website} 
                                   target="_blank" 
                                   rel="noopener noreferrer"
-                                  className="text-blue-500 hover:underline"
+                                  className="text-blue-500 hover:underline block max-w-[180px] overflow-hidden text-ellipsis whitespace-nowrap"
+                                  title={website}
                                 >
-                                  {business.website.replace(/^https?:\/\/(www\.)?/, '')}
-                                </a>
-                              ) : business.contact?.website ? (
-                                <a 
-                                  href={business.contact.website} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer"
-                                  className="text-blue-500 hover:underline"
-                                >
-                                  {business.contact.website.replace(/^https?:\/\/(www\.)?/, '')}
+                                  {truncatedWebsite}
                                 </a>
                               ) : (
                                 <span className="text-gray-400">Not available</span>

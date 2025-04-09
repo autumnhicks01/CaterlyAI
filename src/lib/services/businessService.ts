@@ -1,9 +1,87 @@
 import { Business, BusinessSearchRequest, BusinessSearchResponse } from "@/types/business";
+import { WorkflowManager } from "@/workflows/workflowManager";
+
+// Storage keys
+const SELECTED_LEADS_STORAGE_KEY = 'catering_ai_selected_leads';
+
+// Interface for extended business data in enrichment
+interface EnrichmentBusiness extends Business {
+  // Standard fields that might not be in the Business type
+  city?: string;
+  state?: string;
+  zip_code?: string;
+  website_url?: string;
+  // Any other fields that might be needed for enrichment
+  [key: string]: any;
+}
 
 /**
  * Service for business-related operations
  */
 export const businessService = {
+  /**
+   * Store selected leads in localStorage for enrichment
+   */
+  storeSelectedLeads(leads: Business[]): void {
+    try {
+      // Only store essential data to avoid exceeding storage limits
+      const essentialData = leads.map(lead => ({
+        id: lead.id || `temp-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
+        name: lead.name,
+        website_url: lead.website || lead.contact?.website || '',
+        phone: lead.phone || lead.contact?.phone || '',
+        address: lead.address,
+        description: lead.description || '',
+        category: lead.category || lead.type || 'Business',
+        hasEventSpace: lead.hasEventSpace
+      }));
+      
+      localStorage.setItem(SELECTED_LEADS_STORAGE_KEY, JSON.stringify(essentialData));
+      console.log(`Stored ${essentialData.length} leads in localStorage for enrichment`);
+    } catch (error) {
+      console.error('Error storing leads in localStorage:', error);
+      // If localStorage fails, store in memory as fallback
+      (window as any).__selectedLeads = leads;
+    }
+  },
+  
+  /**
+   * Get selected leads from localStorage or memory fallback
+   */
+  getSelectedLeads(): Business[] {
+    try {
+      const storedData = localStorage.getItem(SELECTED_LEADS_STORAGE_KEY);
+      if (storedData) {
+        const parsedData = JSON.parse(storedData);
+        console.log(`Retrieved ${parsedData.length} leads from localStorage`);
+        return parsedData;
+      }
+    } catch (error) {
+      console.error('Error retrieving leads from localStorage:', error);
+    }
+    
+    // Check memory fallback if localStorage fails
+    if ((window as any).__selectedLeads) {
+      return (window as any).__selectedLeads;
+    }
+    
+    return [];
+  },
+  
+  /**
+   * Clear stored leads after enrichment is complete
+   */
+  clearSelectedLeads(): void {
+    try {
+      localStorage.removeItem(SELECTED_LEADS_STORAGE_KEY);
+      if ((window as any).__selectedLeads) {
+        delete (window as any).__selectedLeads;
+      }
+    } catch (error) {
+      console.error('Error clearing stored leads:', error);
+    }
+  },
+
   /**
    * Fast business search - returns essential data quickly
    * Returns: Name, Address, Phone, Website URL, Category
@@ -130,23 +208,114 @@ export const businessService = {
   },
 
   /**
-   * Enrich businesses with additional information
+   * Enriches a list of businesses using the lead enrichment workflow.
    */
-  async enrichBusinesses(businesses: Business[]): Promise<BusinessSearchResponse> {
+  async enrichBusinesses(businesses: Business[]): Promise<{ businesses?: Business[], error?: string }> {
+    console.log("[ENRICHMENT] Starting business enrichment process");
+
+    // Validate businesses input
+    if (!businesses || businesses.length === 0) {
+      console.error("[ENRICHMENT] No businesses provided for enrichment");
+      return { error: "No businesses provided for enrichment" };
+    }
+
     try {
-      // For now, just return the original businesses - no enrichment
-      return {
-        businesses,
-        count: businesses.length,
-        message: 'Businesses processed without enrichment'
-      };
+      // Extract essential data to avoid serialization issues with date objects
+      const essentialData = businesses.map(business => {
+        const essentialBusiness: EnrichmentBusiness = {
+          id: business.id || `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          name: business.name,
+          description: business.description,
+          address: business.address,
+          city: (business as any).city,
+          state: (business as any).state,
+          zip_code: (business as any).zip_code,
+          website: business.website,
+          website_url: (business as any).website_url || business.website,
+          contact: business.contact
+        };
+
+        // Ensure we have a website URL
+        if (!essentialBusiness.website_url && business.contact?.website) {
+          essentialBusiness.website_url = business.contact.website;
+        }
+
+        return essentialBusiness;
+      });
+
+      // Store leads in localStorage for persistence across page navigation
+      localStorage.setItem('enriching_leads', JSON.stringify(essentialData));
+      console.log("[ENRICHMENT] Stored leads for enrichment:", essentialData.length);
+      console.log("[ENRICHMENT] Sample lead data:", JSON.stringify(essentialData[0]).substring(0, 200));
+
+      // Save leads to database first if they don't have IDs
+      const leadIds = essentialData
+        .filter(business => business.id && !business.id.startsWith('temp_'))
+        .map(business => business.id);
+      
+      if (leadIds.length < essentialData.length) {
+        console.log("[ENRICHMENT] Some leads need to be saved to database first");
+        // Logic to save leads would go here if needed
+        // For now, we'll just use the temp IDs
+      }
+      
+      // Start workflow to enrich the businesses - using standard workflow name
+      console.log("[ENRICHMENT] Executing lead-enrichment workflow with lead IDs:", leadIds);
+      const workflowManager = new WorkflowManager();
+      
+      // Log environment status
+      console.log("[ENRICHMENT] Environment check:", {
+        apiKey: process.env.FIRECRAWL_API_KEY ? "Present (masked)" : "Missing",
+        nodeEnv: process.env.NODE_ENV,
+        apiUrl: process.env.API_URL || "Not set"
+      });
+      
+      // Call the workflow with the list of lead IDs
+      console.log("[ENRICHMENT] About to call workflow manager execute method");
+      const result = await workflowManager.executeWorkflow('lead-enrichment', { leadIds });
+      console.log("[ENRICHMENT] Workflow execution completed:", result);
+
+      console.log("[ENRICHMENT] Workflow success status:", result.success);
+      
+      // Check results format
+      if (Array.isArray(result.enrichedBusinesses)) {
+        console.log("[ENRICHMENT] Received enriched businesses:", result.enrichedBusinesses.length);
+        
+        // Sample check for enrichment data
+        const sampleBusiness = result.enrichedBusinesses[0];
+        if (sampleBusiness?.enrichment_data) {
+          console.log("[ENRICHMENT] Enrichment data found in first result");
+          console.log("[ENRICHMENT] Sample enrichment data:", JSON.stringify(sampleBusiness.enrichment_data).substring(0, 500));
+          
+          // Check for Firecrawl data specifically
+          if (sampleBusiness.enrichment_data.firecrawlExtracted || 
+              sampleBusiness.enrichment_data.websiteContent) {
+            console.log("[ENRICHMENT] Website content successfully extracted");
+          }
+        } else {
+          console.warn("[ENRICHMENT] First business has no enrichment_data property");
+          console.log("[ENRICHMENT] First business data:", JSON.stringify(sampleBusiness).substring(0, 500));
+        }
+      } else {
+        console.warn("[ENRICHMENT] No enriched businesses array in result");
+        console.log("[ENRICHMENT] Result structure:", Object.keys(result));
+      }
+
+      if (!result.success) {
+        console.error("[ENRICHMENT] Workflow failed:", result.error);
+        console.error("[ENRICHMENT] Workflow error details:", result);
+        throw new Error(result.error || "Failed to execute enrichment workflow");
+      }
+
+      // Clear stored leads after successful enrichment
+      console.log("[ENRICHMENT] Clearing stored leads from localStorage");
+      localStorage.removeItem('enriching_leads');
+
+      return { businesses: result.enrichedBusinesses };
     } catch (error) {
-      console.error('Error processing businesses:', error);
-      return {
-        businesses: businesses,
-        count: businesses.length,
-        error: String(error)
-      };
+      console.error("[ENRICHMENT] Error in enrichBusinesses:", error);
+      console.error("[ENRICHMENT] Error stack:", error instanceof Error ? error.stack : "No stack available");
+      return { error: error instanceof Error ? error.message : "Unknown error during enrichment" };
     }
   }
-}; 
+};
