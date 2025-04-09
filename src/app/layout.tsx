@@ -18,11 +18,11 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <Providers>
           <Navbar />
-          <main className="min-h-screen bg-neutral-50">{children}</main>
+          <main className="min-h-screen bg-background">{children}</main>
         </Providers>
       </body>
     </html>

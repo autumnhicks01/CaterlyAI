@@ -77,5 +77,13 @@ export const modelConfig = {
     modelName: "gpt-4o",
     temperature: 0.7,
     maxTokens: 4000,
+  },
+  flyerGeneration: {
+    modelName: "gpt-4o",
+    temperature: 0.7,
+    maxTokens: 2000,
+    imageModelName: "black-forest-labs/FLUX.1-dev-lora",
+    imageSize: "1024x1024",
+    imageQuality: "standard"
   }
 }; 

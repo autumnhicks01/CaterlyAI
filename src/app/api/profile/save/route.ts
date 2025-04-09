@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/auth';
-import { workflowManager } from '@/lib/workflowManager';
+import { workflowManager } from '@/workflows/workflowManager';
 
 /**
  * POST handler for profile save API

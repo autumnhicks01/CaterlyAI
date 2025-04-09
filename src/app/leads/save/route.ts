@@ -1,20 +1,7 @@
-import { createRouter, createAgent } from '@vercel/ai';
-import { googlePlacesTool } from '@/lib/ai/tools/googlePlacesTool';
-import { openAIEnrichmentTool } from '@/lib/ai/tools/openAITool';
 import { NextRequest } from 'next/server';
-import { BUSINESS_ROUTER_PROMPT } from '@/lib/ai/prompts/router';
-import { getUserProfile } from '@/lib/user-profile';
 import { auth } from '@/auth';
-import { Business, EnrichmentInput } from '@/types/business';
+import { Business } from '@/types/business';
 import { GooglePlacesClient } from '@/lib/googleplaces';
-
-// Create the business agent
-const agent = createAgent({
-  name: 'business-search-agent',
-  description: 'Agent that finds business leads for catering companies',
-  prompt: BUSINESS_ROUTER_PROMPT,
-  tools: [googlePlacesTool, openAIEnrichmentTool]
-});
 
 // Function to deduplicate businesses 
 function deduplicateBusinesses(businesses: Business[]): Business[] {
@@ -49,225 +36,131 @@ function deduplicateBusinesses(businesses: Business[]): Business[] {
   return Array.from(uniqueBizMap.values());
 }
 
-// Export the router
-export default createRouter({
-  // POST: Search for leads 
-  POST: async (req: NextRequest) => {
-    try {
-      const session = await auth();
-      
-      if (!session?.user) {
-        return Response.json(
-          { error: 'Authentication required' },
-          { status: 401 }
-        );
-      }
-      
-      const body = await req.json();
-      const { query, radius } = body;
-      
-      if (!query) {
-        return Response.json(
-          { error: 'Missing required query parameter' },
-          { status: 400 }
-        );
-      }
-      
-      // Get user profile for location data
-      const profile = await getUserProfile(session.user.id);
-      
-      if (!profile || !profile.full_address) {
-        return Response.json(
-          { error: 'User profile or location not found' },
-          { status: 400 }
-        );
-      }
-      
-      // Check if we have stored coordinates in user_input_data
-      let userCoordinates = null;
-      if (profile.user_input_data && 
-          typeof profile.user_input_data === 'object' && 
-          'coordinates' in profile.user_input_data && 
-          profile.user_input_data.coordinates) {
-        
-        userCoordinates = profile.user_input_data.coordinates as {lat: number, lng: number};
-        console.log(`Found stored coordinates: ${userCoordinates.lat}, ${userCoordinates.lng}`);
-      }
-      
-      // Use the full address without parsing
-      const location = profile.full_address;
-      const serviceRadius = radius || profile.service_radius || 25;
-      
-      console.log(`Searching for "${query}" in ${location} (${serviceRadius} miles)`);
-      
-      // Use direct search with coordinates if available, otherwise use the agent
-      let searchResult;
-      
-      if (userCoordinates) {
-        try {
-          // Convert miles to meters for Google Places API
-          const radiusInMeters = serviceRadius * 1609.34;
-          
-          // Create a Google Places client for direct search
-          const apiKey = process.env.GOOGLE_PLACES_API_KEY;
-          if (!apiKey) {
-            throw new Error('Google Places API key not configured');
-          }
-          
-          console.log(`Using coordinates for direct search: ${userCoordinates.lat}, ${userCoordinates.lng}`);
-          const googlePlacesClient = new GooglePlacesClient(apiKey);
-          const results = await googlePlacesClient.searchPlacesByCoordinates(
-            query, 
-            userCoordinates.lat, 
-            userCoordinates.lng, 
-            radiusInMeters
-          );
-          
-          // Format results to match what the agent would return
-          searchResult = JSON.stringify({
-            businesses: results,
-            count: results.length,
-            location: location,
-            coordinates: userCoordinates
-          });
-        } catch (error) {
-          console.error('Error searching with coordinates:', error);
-          
-          // Fall back to agent search if direct coordinate search fails
-          // Use a simpler prompt without coordinates since they'll be handled differently by the agent
-          const agentPrompt = `
-            Search for businesses that could use catering services:
-            Query: ${query}
-            Location: ${location}
-            Radius: ${serviceRadius} miles
-            
-            Find venues that host events and might need catering services.
-            Return a detailed list of businesses with full contact details.
-          `;
-          
-          searchResult = await agent.run(agentPrompt);
-        }
-      } else {
-        // Use the agent to search with location string
-        const searchPrompt = `
-          Search for businesses that could use catering services:
-          Query: ${query}
-          Location: ${location}
-          Radius: ${serviceRadius} miles
-          
-          Find venues that host events and might need catering services.
-          Return a detailed list of businesses with full contact details.
-        `;
-        
-        searchResult = await agent.run(searchPrompt);
-      }
-      
-      // Parse and process the results
+// Modern Next.js API route handlers
+export async function POST(req: NextRequest) {
+  try {
+    const session = await auth();
+    
+    if (!session?.user) {
+      return Response.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
+    const body = await req.json();
+    const { query, location, radius, coordinates } = body;
+    
+    if (!query) {
+      return Response.json(
+        { error: 'Missing required query parameter' },
+        { status: 400 }
+      );
+    }
+    
+    // Use direct search with coordinates if available
+    if (coordinates && coordinates.lat && coordinates.lng) {
       try {
-        const resultData = JSON.parse(searchResult);
+        // Convert miles to meters for Google Places API
+        const radiusInMeters = (radius || 25) * 1609.34;
         
-        if (!resultData.businesses || !resultData.businesses.length) {
-          return Response.json({
-            businesses: [],
-            count: 0,
-            message: 'No businesses found'
-          });
+        // Create a Google Places client for direct search
+        const apiKey = process.env.GOOGLE_PLACES_API_KEY;
+        if (!apiKey) {
+          throw new Error('Google Places API key not configured');
         }
         
-        // Deduplicate and process businesses
-        const businesses = deduplicateBusinesses(resultData.businesses);
+        console.log(`Using coordinates for direct search: ${coordinates.lat}, ${coordinates.lng}`);
+        const googlePlacesClient = new GooglePlacesClient(apiKey);
+        const results = await googlePlacesClient.searchPlacesByCoordinates(
+          query, 
+          coordinates.lat, 
+          coordinates.lng, 
+          radiusInMeters
+        );
+        
+        // Deduplicate businesses
+        const businesses = deduplicateBusinesses(results);
         
         // Return the results
         return Response.json({
           businesses,
           count: businesses.length,
-          location,
-          radius: serviceRadius
+          location: location || 'Unknown location',
+          radius: radius || 25,
+          coordinates
         });
       } catch (error) {
-        console.error('Error parsing search results:', error);
-        console.log('Raw response:', searchResult);
-        
+        console.error('Error searching with coordinates:', error);
         return Response.json(
-          { error: 'Failed to parse search results' },
+          { error: 'Failed to search for businesses' },
           { status: 500 }
         );
       }
-    } catch (error) {
-      console.error('Business search error:', error);
+    } else {
+      // No coordinates available
       return Response.json(
-        { error: String(error) },
-        { status: 500 }
+        { error: 'Location coordinates are required for business search' },
+        { status: 400 }
       );
     }
-  },
-  
-  // PATCH: Enrich business data
-  PATCH: async (req: NextRequest) => {
-    try {
-      const session = await auth();
-      
-      if (!session?.user) {
-        return Response.json(
-          { error: 'Authentication required' },
-          { status: 401 }
-        );
-      }
-      
-      const body = await req.json();
-      
-      if (!body.businesses || !Array.isArray(body.businesses)) {
-        return Response.json(
-          { error: 'Missing or invalid businesses array' },
-          { status: 400 }
-        );
-      }
-      
-      // Process each business for enrichment
-      const enrichmentPromises = body.businesses.map(async (business: Business) => {
-        if (!business.name || !business.address) {
-          return { ...business, error: 'Missing required fields' };
-        }
-        
-        try {
-          // Use the OpenAI enrichment tool directly
-          const enrichResult = await openAIEnrichmentTool.invoke({
-            name: business.name,
-            address: business.address,
-            phone: business.contact?.phone || '',
-            website: business.contact?.website || ''
-          } as EnrichmentInput);
-          
-          // Merge the enriched data with original business
-          return { 
-            ...business, 
-            description: enrichResult.description || business.description,
-            contact: {
-              ...business.contact,
-              phone: business.contact?.phone || enrichResult.phone || '',
-              website: business.contact?.website || enrichResult.website || ''
-            },
-            hasEventSpace: enrichResult.hasEventSpace
-          };
-        } catch (error) {
-          console.error(`Error enriching business ${business.name}:`, error);
-          return { ...business, enrichmentError: String(error) };
-        }
-      });
-      
-      // Wait for all enrichments to complete
-      const enrichedBusinesses = await Promise.all(enrichmentPromises);
-      
-      return Response.json({
-        businesses: enrichedBusinesses,
-        count: enrichedBusinesses.length
-      });
-    } catch (error) {
-      console.error('Business enrichment error:', error);
-      return Response.json(
-        { error: String(error) },
-        { status: 500 }
-      );
-    }
+  } catch (error) {
+    console.error('Business search error:', error);
+    return Response.json(
+      { error: String(error) },
+      { status: 500 }
+    );
   }
-});
+}
+
+// PATCH endpoint for enriching lead data
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await auth();
+    
+    if (!session?.user) {
+      return Response.json(
+        { error: 'Authentication required' },
+        { status: 401 }
+      );
+    }
+    
+    const body = await req.json();
+    
+    if (!body.businesses || !Array.isArray(body.businesses)) {
+      return Response.json(
+        { error: 'Missing or invalid businesses array' },
+        { status: 400 }
+      );
+    }
+    
+    // Process each business for basic enrichment
+    const enrichedBusinesses = body.businesses.map((business: Business) => {
+      if (!business.name || !business.address) {
+        return { ...business, error: 'Missing required fields' };
+      }
+      
+      // Create a simple description based on business information
+      const description = `${business.name} is a ${business.type || 'business'} located at ${business.address}.`;
+      
+      // Return basic enrichment
+      return { 
+        ...business, 
+        description: business.description || description,
+        hasEventSpace: business.hasEventSpace || false
+      };
+    });
+    
+    return Response.json({
+      businesses: enrichedBusinesses,
+      count: enrichedBusinesses.length,
+      message: 'Businesses enriched successfully'
+    });
+  } catch (error) {
+    console.error('Business enrichment error:', error);
+    return Response.json(
+      { error: String(error) },
+      { status: 500 }
+    );
+  }
+}

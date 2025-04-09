@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { auth } from '@/auth';
 import { getUserProfile } from '@/lib/user-profile';
 import { Business, BusinessSearchResponse } from '@/types/business';
-import { searchBusinesses, enrichBusinesses } from '@/lib/ai/tools/businessSearchAgent';
+import { searchBusinesses, enhanceBusinesses } from '@/agents/businessAgent';
 
 // Function to deduplicate businesses 
 function deduplicateBusinesses(businesses: Business[]): Business[] {
@@ -87,18 +87,17 @@ export async function POST(req: NextRequest) {
     console.log(`Searching for "${query}" in ${location} (${serviceRadius} miles)`);
     
     // Search for businesses using our AI-powered search agent
-    const searchResult = await searchBusinesses(
-      query,
-      location,
-      serviceRadius,
-      userCoordinates || undefined
-    );
+    // Note: The updated searchBusinesses function only takes query, location, and radius
+    const searchResponse = await searchBusinesses(query, location, serviceRadius);
     
-    // Handle search errors
-    if (searchResult.error) {
-      console.error('Business search error:', searchResult.error);
+    // Parse the JSON response from the agent
+    let searchResult;
+    try {
+      searchResult = JSON.parse(searchResponse);
+    } catch (error) {
+      console.error('Error parsing business search result:', error);
       return Response.json(
-        { error: searchResult.error },
+        { error: 'Failed to parse business search results' },
         { status: 500 }
       );
     }
@@ -159,7 +158,7 @@ export async function PATCH(req: NextRequest) {
     }
     
     // Enrich businesses using our AI agent
-    const enrichResult = await enrichBusinesses(body.businesses);
+    const enrichResult = await enhanceBusinesses(body.businesses);
     
     // Handle enrichment errors
     if (enrichResult.error) {

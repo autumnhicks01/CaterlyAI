@@ -12,6 +12,7 @@ import { Sparkles, MapPin, Clock } from 'lucide-react'
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { generateProfile } from "@/agents/profileAgent"
+import AIFlyerGenerator from "@/components/marketing/ai-flyer-generator"
 
 // Type definitions
 export interface StructuredProfile {
@@ -1101,6 +1102,17 @@ export default function AIProfilePage() {
             </div>
           </CardContent>
         </Card>
+        
+        {/* AI Flyer Generator */}
+        {aiProfile && (
+          <div className="mb-8">
+            <AIFlyerGenerator 
+              profileId={profileId}
+              profileData={profile}
+              aiProfileData={aiProfile}
+            />
+          </div>
+        )}
         
         <div className="flex justify-between">
           <Button 

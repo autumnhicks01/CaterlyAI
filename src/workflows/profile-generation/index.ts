@@ -1,6 +1,6 @@
 import { Workflow } from '@mastra/core/workflows';
 import { validateProfileData, generateAIProfile, saveGeneratedProfile } from './steps';
-import { profileInputSchema, profileOutputSchema } from './schemas';
+import { profileInputSchema, profileOutputSchema, ProfileInput } from './schemas';
 
 /**
  * Profile Generation Workflow
@@ -14,7 +14,6 @@ import { profileInputSchema, profileOutputSchema } from './schemas';
  * 3. Save the generated profile to the database
  */
 export const profileGenerationWorkflow = new Workflow({
-  id: 'profile-generation',
   name: 'Profile Generation',
   description: 'Generate an AI-enhanced business profile for a catering business',
   input: profileInputSchema,
@@ -25,5 +24,26 @@ export const profileGenerationWorkflow = new Workflow({
     saveGeneratedProfile
   ]
 });
+
+/**
+ * Execute the profile generation workflow
+ * 
+ * This is a helper function that provides a simpler interface for executing
+ * the profile generation workflow.
+ */
+export async function executeProfileGeneration(input: ProfileInput, progressEmitter?: any) {
+  try {
+    const instance = profileGenerationWorkflow.start({
+      input,
+      context: progressEmitter ? { progressEmitter } : {}
+    });
+    
+    const result = await instance.waitUntilComplete();
+    return result;
+  } catch (error) {
+    console.error('Error executing profile generation workflow:', error);
+    throw error;
+  }
+}
 
 export default profileGenerationWorkflow; 

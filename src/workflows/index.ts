@@ -5,6 +5,8 @@
  * providing a centralized entry point for workflow functionality.
  */
 
+import { z } from 'zod';
+
 // Business Search Workflow
 export { 
   businessSearchWorkflow,
@@ -17,20 +19,18 @@ export type {
   EnhancedBusinessResult 
 } from './business-search/schemas';
 
-// Profile Generation Workflow
-export {
-  profileGenerationWorkflow,
-  executeProfileGeneration
-} from './profile-generation';
+// Lead Enrichment Workflow
+export { 
+  default as leadEnrichmentWorkflow,
+  enrichLeads
+} from './lead-enrichment';
 
-export type {
-  ProfileGenerationInput,
-  EnhancedProfile,
-  ProfileStorage
-} from './profile-generation/schemas';
+// Lead enrichment input interface
+export type { LeadEnrichmentInput } from './lead-enrichment/schemas';
 
-// Lead Enrichment Workflow (to be implemented)
-// export { leadEnrichmentWorkflow } from './lead-enrichment';
+// Export all workflows for default
+import leadEnrichmentWorkflow from './lead-enrichment';
 
-// Profile Generation Workflow (to be implemented)
-// export { profileGenerationWorkflow } from './profile-generation'; 
+export default {
+  'lead-enrichment': leadEnrichmentWorkflow
+}; 

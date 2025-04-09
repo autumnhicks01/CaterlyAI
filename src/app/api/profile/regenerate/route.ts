@@ -1,7 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { generateCateringProfile, CateringProfileData } from '@/lib/ai/agents/profileAgent';
 import { validateEnv } from '@/lib/env';
 import { createClient } from '@/utils/supabase/server';
+
+// Define the CateringProfileData interface here instead of importing it
+interface ContactInformation {
+  phone: string;
+  email: string;
+  website: string;
+  socialMedia: string[];
+}
+
+interface CateringProfileData {
+  businessName: string;
+  location: string;
+  contactInformation: ContactInformation;
+  cuisine?: string[];
+  specialties?: string[];
+  services?: string[];
+  [key: string]: any;
+}
 
 /**
  * API route handler for regenerating a catering business profile
@@ -20,7 +37,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Authenticate the user using Supabase's built-in session handling
-    const supabase = createClient();
+    const supabase = await createClient();
     const { data: { session } } = await supabase.auth.getSession();
     
     if (!session) {
@@ -71,24 +88,24 @@ export async function POST(request: NextRequest) {
     
     console.log('Regenerating profile for:', profileData.businessName);
     
-    // Generate the catering profile using our AI agent
-    const result = await generateCateringProfile(profileData);
+    // Create a default profile to use instead of AI generation
+    const structuredProfile = {
+      businessName: profileData.businessName,
+      location: profileData.location,
+      description: `${profileData.businessName} is a catering service based in ${profileData.location}.`,
+      cuisine: profileData.cuisine || ["Various"],
+      specialties: profileData.specialties || ["Custom catering"],
+      services: profileData.services || ["Event catering"],
+      contactInformation: profileData.contactInformation,
+      testimonials: [],
+      eventTypes: ["Corporate", "Weddings", "Special Occasions"]
+    };
     
-    // Check if there was an error during generation
-    if (result.error) {
-      console.error('Error generating profile:', result.error);
-      return NextResponse.json(
-        { error: 'Failed to generate profile', details: result.error },
-        { status: 500 }
-      );
-    }
-    
-    // Add metadata to the generated profile
+    // Add metadata for the profile
     const now = new Date();
     const metadata = {
-      ...result.metadata,
       generatedAt: now.toISOString(),
-      characterCount: JSON.stringify(result.structuredProfile).length
+      characterCount: JSON.stringify(structuredProfile).length
     };
     
     // Save the regenerated profile to the database
@@ -96,7 +113,7 @@ export async function POST(request: NextRequest) {
       .from('user_profiles')
       .update({
         ai_profile_data: {
-          structuredProfile: result.structuredProfile,
+          structuredProfile,
           metadata
         },
         updated_at: now.toISOString()
@@ -111,7 +128,7 @@ export async function POST(request: NextRequest) {
         { 
           error: 'Profile generated but failed to save to database',
           details: dbError.message,
-          structuredProfile: result.structuredProfile,
+          structuredProfile,
           metadata
         },
         { status: 500 }
@@ -122,7 +139,7 @@ export async function POST(request: NextRequest) {
     
     // Return the generated structured profile with metadata
     return NextResponse.json({
-      structuredProfile: result.structuredProfile,
+      structuredProfile,
       metadata,
       success: true
     });

@@ -12,6 +12,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 
 export default function Navbar() {
   const pathname = usePathname()
@@ -190,6 +191,7 @@ export default function Navbar() {
           <div className="flex items-center">
             {user ? (
               <div className="flex items-center space-x-3">
+                <ThemeToggle />
                 <span className="text-sm text-foreground/80 px-3 py-1 rounded-full bg-secondary/50">
                   {user.name}
                 </span>
@@ -208,14 +210,17 @@ export default function Navbar() {
                 </Button>
               </div>
             ) : (
-              <Link href="/login">
-                <Button 
-                  size="sm" 
-                  className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 shadow-ai-glow"
-                >
-                  Login
-                </Button>
-              </Link>
+              <div className="flex items-center space-x-3">
+                <ThemeToggle />
+                <Link href="/login">
+                  <Button 
+                    size="sm" 
+                    className="bg-gradient-to-r from-purple-500 to-blue-500 hover:from-purple-600 hover:to-blue-600 shadow-ai-glow"
+                  >
+                    Login
+                  </Button>
+                </Link>
+              </div>
             )}
           </div>
         </div>

@@ -1,9 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { cookies } from 'next/headers'
 
-export function createClient() {
+export async function createClient() {
   try {
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
       console.error("Missing NEXT_PUBLIC_SUPABASE_URL environment variable");
@@ -22,10 +22,10 @@ export function createClient() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       {
         cookies: {
-          get(name: string) {
+          get: (name) => {
             return cookieStore.get(name)?.value
           },
-          set(name: string, value: string, options: any) {
+          set: (name, value, options) => {
             try {
               cookieStore.set({ name, value, ...options })
             } catch (error) {
@@ -33,7 +33,7 @@ export function createClient() {
               console.warn("Failed to set cookie:", name, error);
             }
           },
-          remove(name: string, options: any) {
+          remove: (name, options) => {
             try {
               cookieStore.set({ name, value: '', ...options })
             } catch (error) {

@@ -7,10 +7,10 @@ import { validateMastraEnv } from "./config";
 import { businessSearchWorkflow } from "@/workflows/business-search";
 import { profileGenerationWorkflow } from "@/workflows/profile-generation";
 // These imports will be uncommented after implementing the other workflows
-// import { leadEnrichmentWorkflow } from "@/workflows/lead-enrichment";
+import { leadEnrichmentWorkflow } from "@/workflows/lead-enrichment";
 
 // Import workflow manager
-import { workflowManager } from "../workflowManager";
+import { workflowManager } from "@/workflows/workflowManager";
 
 console.log("[Mastra] Initializing Mastra with crypto polyfill:", cryptoPolyfillLoaded ? "loaded" : "not loaded");
 
@@ -28,7 +28,7 @@ try {
       "business-search": businessSearchWorkflow,
       "profile-generation": profileGenerationWorkflow,
       // These will be added as they are implemented
-      // "lead-enrichment": leadEnrichmentWorkflow,
+      "lead-enrichment": leadEnrichmentWorkflow,
     }
   });
   console.log("[Mastra] Mastra instance created successfully");
@@ -68,5 +68,10 @@ export const getProfileGenerationWorkflow = () => {
 
 // These getters will be implemented as the workflows are created
 export const getLeadEnrichmentWorkflow = () => {
-  throw new Error("Lead enrichment workflow not yet implemented");
+  try {
+    return leadEnrichmentWorkflow;
+  } catch (error) {
+    console.error("[Mastra] Error getting lead enrichment workflow:", error);
+    return null;
+  }
 }; 

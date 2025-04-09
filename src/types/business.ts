@@ -56,6 +56,7 @@ export interface BusinessSearchResponse {
   };
   error?: string;
   message?: string;
+  workflowRunId?: string; // ID from workflow execution
 }
 
 // Request for business search

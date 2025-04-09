@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
     }
     
     // Initialize Supabase client
-    const supabase = createClient();
+    const supabase = await createClient();
     const userId = session.user.id;
     
     console.log(`Fetching saved leads for user: ${userId}`);

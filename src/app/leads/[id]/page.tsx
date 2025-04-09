@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 // Get lead data from Supabase
 async function getLead(id: string) {
   console.log(`Fetching lead with ID: ${id}`)
-  const supabase = createClient()
+  const supabase = await createClient()
   const { data, error } = await supabase
     .from("saved_leads")
     .select("*")
