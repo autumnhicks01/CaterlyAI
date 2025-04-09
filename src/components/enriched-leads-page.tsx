@@ -6,8 +6,10 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircleIcon, InfoIcon, ExternalLinkIcon } from "lucide-react"
+import { AlertCircleIcon, InfoIcon, ExternalLinkIcon, SendIcon } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useCaterly } from "@/app/context/caterly-context"
+import { mapToOutreachCategory } from "@/config/categoryMapping"
 
 // Define interfaces for Lead and EnrichmentData based on the Supabase schema
 interface EnrichmentData {
@@ -42,6 +44,7 @@ interface Lead {
   lead_score?: number | null;
   lead_score_label?: string | null;
   created_at?: string | null;
+  category?: string | null;
 }
 
 export default function EnrichedLeadsPage() {
@@ -57,6 +60,24 @@ export default function EnrichedLeadsPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [messageType, setMessageType] = useState<'success' | 'warning' | 'error'>('success')
   const [loadingMessage, setLoadingMessage] = useState<string>('')
+  const [statusMessage, setStatusMessage] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+
+  const { setCampaign, setEnrichedLeads, setProfile } = useCaterly()
+  const [isLaunchingCampaign, setIsLaunchingCampaign] = useState(false)
+
+  // Show status message function similar to campaign-launch-page
+  const showStatus = (message: string, isError = false) => {
+    setStatusMessage({
+      message,
+      type: isError ? 'error' : 'success'
+    });
+    console.log(isError ? `Error: ${message}` : message);
+    
+    // Auto clear after 3 seconds
+    setTimeout(() => {
+      setStatusMessage(null);
+    }, 3000);
+  };
 
   // Fetch initial data and check for enrichment status
   useEffect(() => {
@@ -166,7 +187,12 @@ export default function EnrichedLeadsPage() {
       setIsRefreshing(true)
       setError(null)
       console.log('Fetching leads from API...')
-      const response = await fetch('/api/leads/saved')
+      const response = await fetch('/api/leads/saved', {
+        headers: {
+          'x-csrf-protection': '1'
+        },
+        credentials: 'include' // Include cookies for authentication
+      })
       
       if (!response.ok) {
         const data = await response.json()
@@ -218,7 +244,7 @@ export default function EnrichedLeadsPage() {
   // Manual enrichment process for leads
   const enrichSelectedLeads = async () => {
     if (selectedLeads.length === 0) {
-      setError("Please select at least one lead to enrich");
+      showStatus("Please select at least one lead to enrich", true);
       return;
     }
     
@@ -234,7 +260,9 @@ export default function EnrichedLeadsPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-csrf-protection': '1'
         },
+        credentials: 'include', // Include cookies for authentication
         body: JSON.stringify({
           leadIds: selectedLeads
         }),
@@ -250,6 +278,7 @@ export default function EnrichedLeadsPage() {
       }
       
       // Set success message
+      showStatus(`Successfully enriched ${selectedLeads.length} leads`);
       setSuccessMessage(`Successfully enriched ${selectedLeads.length} leads`);
       setMessageType('success');
       
@@ -260,6 +289,7 @@ export default function EnrichedLeadsPage() {
       setSelectAll(false);
     } catch (err) {
       console.error('Error enriching leads:', err);
+      showStatus(err instanceof Error ? err.message : 'An error occurred while enriching leads', true);
       setError(err instanceof Error ? err.message : 'An error occurred while enriching leads');
       setMessageType('error');
     } finally {
@@ -292,11 +322,212 @@ export default function EnrichedLeadsPage() {
     return url.slice(0, maxLength) + '...';
   };
 
+  // Add a function to launch the AI campaign with selected leads
+  const launchAICampaign = async () => {
+    try {
+      setIsLaunchingCampaign(true);
+      showStatus("Creating AI campaign...");
+      
+      // Get selected leads
+      if (!selectedLeads.length) {
+        showStatus("Please select at least one lead", true);
+        return;
+      }
+      
+      // Get full data for selected leads
+      const selectedLeadsData = leads.filter(lead => selectedLeads.includes(lead.id));
+      
+      // Organize leads by category
+      const leadsByCategory: { [key: string]: Lead[] } = {};
+      
+      for (const lead of selectedLeadsData) {
+        // Get the category for outreach
+        let outreachCategory = mapToOutreachCategory(lead.category || "");
+        
+        // Initialize category array if needed
+        if (!leadsByCategory[outreachCategory]) {
+          leadsByCategory[outreachCategory] = [];
+        }
+        
+        leadsByCategory[outreachCategory].push(lead);
+      }
+      
+      // Create a campaign object with the leads grouped by category
+      const campaignData = {
+        name: `AI Campaign - ${new Date().toLocaleDateString()}`,
+        eventType: Object.keys(leadsByCategory)[0] || "corporate", // Default to first category
+        targetCategories: Object.keys(leadsByCategory),
+        location: "",
+        radius: 50,
+      };
+      
+      // Format the leads for the campaign context
+      const formattedLeadsData = selectedLeadsData.map(lead => ({
+        id: typeof lead.id === 'string' ? parseInt(lead.id, 10) : lead.id,
+        name: lead.name || "",
+        company: lead.name || "",
+        location: lead.address || "",
+        category: mapToOutreachCategory(lead.category || ""),
+        description: lead.enrichment_data?.aiOverview || "",
+        website: lead.website_url || lead.enrichment_data?.website || "",
+        contact: {
+          email: lead.contact_email || lead.enrichment_data?.eventManagerEmail || "",
+          phone: lead.contact_phone || lead.enrichment_data?.eventManagerPhone || "",
+        }
+      }));
+      
+      // Get profile first
+      console.log("Fetching user profile for campaign...");
+      let profileData: any = null;
+      
+      try {
+        // Fetch the profile for the current user
+        const profileResponse = await fetch('/api/profile/current');
+        
+        if (profileResponse.ok) {
+          const profileDataResult = await profileResponse.json();
+          const profileSource = profileDataResult.profile || profileDataResult;
+          const userInputData = profileSource.user_input_data || {};
+          
+          // Normalize fields to match the expected Profile structure
+          profileData = {
+            companyName: profileSource.business_name || profileSource.companyName || userInputData.businessName || "",
+            menuLink: profileSource.menuLink || profileSource.website_url || userInputData.website || "",
+            managerContact: profileSource.managerContact || userInputData.managerContact || userInputData.ownerContact || "",
+            orderingLink: profileSource.orderingLink || profileSource.website_url || "",
+            focus: profileSource.focus || userInputData.cuisineSpecialties || userInputData.serviceTypes || "",
+            description: profileSource.description || userInputData.uniqueSellingPoints || "",
+            idealClients: profileSource.idealClients || userInputData.idealClients || "",
+            location: profileSource.full_address || profileSource.location || "",
+            photos: [], // Required by Profile type, but not needed for API
+          };
+        } else {
+          throw new Error(`Failed to fetch profile: ${profileResponse.status}`);
+        }
+      } catch (error) {
+        console.error("Error getting user profile:", error);
+        
+        // Fallback to empty profile with required fields
+        profileData = {
+          companyName: "", 
+          menuLink: "",
+          managerContact: "",
+          orderingLink: "",
+          focus: "",
+          description: "", 
+          idealClients: "",
+          location: "",
+          photos: [], // Required by Profile type, but not needed for API
+        };
+        
+        showStatus("Warning: Using default profile data", true);
+      }
+      
+      // Store campaign data in context
+      setCampaign(campaignData);
+      setEnrichedLeads(formattedLeadsData);
+      setProfile(profileData);
+      
+      // Pre-generate templates for all categories before navigating
+      const categories = Object.keys(leadsByCategory);
+      console.log(`Pre-generating templates for ${categories.length} categories: ${categories.join(', ')}`);
+      
+      // Initialize template store in memory
+      const templatesByCategory: Record<string, any[]> = {};
+      let successCount = 0;
+      
+      // Generate templates for each category in parallel
+      await Promise.all(
+        categories.map(async (category) => {
+          try {
+            showStatus(`Generating templates for ${category}...`);
+            
+            // Get leads for this category
+            const categoryLeads = formattedLeadsData.filter(lead => 
+              lead.category.toLowerCase() === category.toLowerCase()
+            );
+            
+            // Create request payload
+            const payload = {
+              category,
+              leads: categoryLeads,
+              profile: profileData,
+              requestId: `${category}-${Date.now()}`
+            };
+            
+            // Make API call
+            const response = await fetch('/api/outreach/start', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'x-csrf-protection': '1',
+                'x-request-id': payload.requestId
+              },
+              credentials: 'include',
+              body: JSON.stringify(payload)
+            });
+            
+            if (!response.ok) {
+              throw new Error(`Failed to generate templates for ${category}: ${response.status}`);
+            }
+            
+            const data = await response.json();
+            
+            // Process templates
+            if (data.success) {
+              let templates: string[] = [];
+              
+              // Handle different response formats
+              if (data.templates?.templates) {
+                templates = data.templates.templates;
+              } else if (data.data?.emailTemplates?.[category]) {
+                templates = data.data.emailTemplates[category];
+              } else if (Array.isArray(data.templates)) {
+                templates = data.templates;
+              }
+              
+              if (templates.length > 0) {
+                templatesByCategory[category] = templates;
+                successCount++;
+                showStatus(`Generated ${templates.length} templates for ${category}`);
+              }
+            }
+          } catch (error) {
+            console.error(`Error generating templates for ${category}:`, error);
+            showStatus(`Failed to generate templates for ${category}`, true);
+          }
+        })
+      );
+      
+      // After template generation, navigate to campaign page
+      console.log("Template generation complete. Navigating to campaign page.");
+      showStatus(`Successfully created campaign with ${formattedLeadsData.length} leads across ${successCount} categories.`);
+      
+      // Navigate to the campaign launch page
+      router.push('/campaign/launch');
+      
+    } catch (error) {
+      console.error("Error launching AI campaign:", error);
+      showStatus("Failed to launch AI campaign. Please try again.", true);
+    } finally {
+      setIsLaunchingCampaign(false);
+    }
+  };
+
   return (
     <div className="container mx-auto px-4 py-12 relative">
       {/* Background effects */}
       <div className="absolute -top-12 -left-12 w-64 h-64 bg-blue-500/10 rounded-full filter blur-3xl animate-pulse-slow"></div>
       <div className="absolute -bottom-12 -right-12 w-80 h-80 bg-purple-500/10 rounded-full filter blur-3xl animate-pulse-slow"></div>
+      
+      {/* Status message notification */}
+      {statusMessage && (
+        <div className={`fixed top-4 right-4 p-4 rounded-md shadow-md z-50 max-w-md animate-fade-in ${
+          statusMessage.type === 'error' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'
+        }`}>
+          {statusMessage.message}
+        </div>
+      )}
       
       <div className="relative">
         <h1 className="text-4xl font-bold mb-2 text-center gradient-text-blue">
@@ -523,6 +754,41 @@ export default function EnrichedLeadsPage() {
                   <div className="text-sm text-muted-foreground flex items-center">
                     <div className="w-2 h-2 rounded-full bg-blue-500 mr-2"></div>
                     {selectedLeads.length} of {leads.length} leads selected
+                  </div>
+                  
+                  <div className="flex space-x-3">
+                    <Button
+                      onClick={enrichSelectedLeads}
+                      disabled={selectedLeads.length === 0 || isEnriching}
+                      className="bg-gradient-to-r from-blue-600 to-purple-600 text-white"
+                    >
+                      {isEnriching ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                          Enriching...
+                        </>
+                      ) : (
+                        <>Enrich Selected ({selectedLeads.length})</>
+                      )}
+                    </Button>
+                    
+                    <Button
+                      onClick={launchAICampaign}
+                      disabled={selectedLeads.length === 0 || isLaunchingCampaign}
+                      className="bg-gradient-to-r from-green-600 to-emerald-600 text-white"
+                    >
+                      {isLaunchingCampaign ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                          Creating Campaign...
+                        </>
+                      ) : (
+                        <>
+                          <SendIcon className="w-4 h-4 mr-2" />
+                          Launch AI Campaign
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
               )}
