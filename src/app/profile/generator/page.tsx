@@ -1,10 +1,6 @@
-import { Metadata } from 'next';
-import ProfileGenerator from '@/components/profile-generator';
+'use client';
 
-export const metadata: Metadata = {
-  title: 'Catering Profile Generator | Mastra AI Profile',
-  description: 'Generate a professional AI-enhanced profile for your catering business',
-};
+import ProfileGenerator from '@/components/profile-generator';
 
 export default function ProfileGeneratorPage() {
   return (
