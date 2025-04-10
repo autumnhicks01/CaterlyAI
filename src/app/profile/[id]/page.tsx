@@ -174,8 +174,19 @@ export default function ProfilePage() {
   const userInputData = typeof profile.user_input_data === 'object' ? profile.user_input_data : {};
   const serviceRadius = userInputData && 'service_radius' in userInputData ? 
     String(userInputData.service_radius) : null;
-  const yearsInBusiness = userInputData && 'years_in_business' in userInputData ? 
-    String(userInputData.years_in_business) : null;
+  
+  // Get business type tags (either from user data or defaults)
+  const businessTags: string[] = userInputData && userInputData.business_tags && Array.isArray(userInputData.business_tags) 
+    ? userInputData.business_tags 
+    : ['bakery', 'desserts', 'on site']; // Default tags if none are provided
+
+  // Extract catering manager info
+  const managerContactInfo = userInputData && 'managerContact' in userInputData ? 
+    String(userInputData.managerContact).split(',').map(item => item.trim()) : 
+    ['', ''];
+  
+  const managerName = managerContactInfo[0] || 'Not specified';
+  const managerEmail = managerContactInfo.length > 1 ? managerContactInfo[1] : 'Not specified';
 
   return (
     <div className="container mx-auto px-4 py-12">
@@ -223,7 +234,16 @@ export default function ProfilePage() {
                   </div>
                   <div className="pl-6">
                     <p><strong>Name:</strong> {profile.business_name}</p>
-                    <p><strong>Type:</strong> {profile.business_type || 'Catering'}</p>
+                    <div>
+                      <strong>Type:</strong> 
+                      <div className="flex flex-wrap gap-2 mt-1">
+                        {businessTags.map((tag: string, index: number) => (
+                          <Badge key={index} variant="outline" className="bg-secondary/40 border-blue-500/20">
+                            {tag}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 
@@ -246,28 +266,14 @@ export default function ProfilePage() {
                     <span className="font-medium">Contact</span>
                   </div>
                   <div className="pl-6">
+                    <p><strong>Catering Manager:</strong> {managerName}</p>
+                    <p><strong>Email:</strong> {managerEmail}</p>
                     <p><strong>Phone:</strong> {profile.contact_phone || 'Not specified'}</p>
                     <p><strong>Website:</strong> {profile.website_url || 'Not specified'}</p>
                   </div>
                 </div>
-                
-                <div className="space-y-2">
-                  <div className="flex items-center text-gray-600">
-                    <Clock className="w-4 h-4 mr-2" />
-                    <span className="font-medium">Experience</span>
-                  </div>
-                  <div className="pl-6">
-                    <p>{yearsInBusiness || 'Not specified'}</p>
-                  </div>
-                </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
-                  {yearsInBusiness && (
-                    <Badge variant="outline" className="bg-secondary/40 border-blue-500/20">
-                      {yearsInBusiness} years in business
-                    </Badge>
-                  )}
-                  
                   {serviceRadius && (
                     <Badge variant="outline" className="bg-secondary/40 border-green-500/20">
                       {serviceRadius} mile radius
@@ -277,12 +283,6 @@ export default function ProfilePage() {
               </div>
             </div>
           </CardContent>
-          
-          <CardFooter className="bg-gray-50 border-t flex justify-between py-4">
-            <div className="text-sm text-gray-500">
-              {profile.created_at && `Created on ${new Date(profile.created_at).toLocaleDateString()}`}
-            </div>
-          </CardFooter>
         </Card>
         
         {/* AI Marketing Profile Card */}

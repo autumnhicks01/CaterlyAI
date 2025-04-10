@@ -778,4 +778,376 @@ async function streamToString(stream: any, onChunk?: (chunk: string) => void): P
   } finally {
     reader.releaseLock();
   }
+}
+
+/**
+ * Generate a social media post for a catering business using a two-step AI process:
+ * 1. GPT-4o: Creates an engaging social media caption directly
+ * 2. Flux API: Generates the social media image based on the caption
+ * 
+ * @param profileData - The business profile data including enhanced profile information
+ * @param streaming - Whether to return a streaming response (default: false)
+ * @returns Either a streaming response or a Promise resolving to a JSON string
+ */
+export async function generateSocialMedia(profileData: any, streaming = false) {
+  // Ensure we have a business name for logging
+  const businessName = profileData.businessName || 
+                       profileData.business_name || 
+                       "Catering Business";
+  
+  console.log(`Generating social media post for: "${businessName}"`);
+  
+  // Create a safe copy of the profile data
+  const safeProfileData = {
+    ...profileData,
+    businessName,
+    // Ensure other critical fields are present
+    tagline: profileData.tagline || `${businessName} - Professional Catering`,
+    enhancedDescription: profileData.enhancedDescription || 
+                         `${businessName} is a professional catering service offering quality food and exceptional service.`
+  };
+  
+  // If streaming is requested, return a streaming response
+  if (streaming) {
+    return generateSocialMediaStream(safeProfileData);
+  }
+  
+  // Otherwise, return a Promise resolving to a JSON string
+  try {
+    // Get the API key
+    const apiKey = await getOpenAIApiKey();
+    
+    // Create social media caption directly with GPT-4o
+    const captionPrompt = getSocialMediaCaptionPrompt("", safeProfileData);
+    
+    const captionResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o", // Use GPT-4o directly for better and faster results
+        messages: [
+          { 
+            role: "system", 
+            content: "You are an expert social media copywriter who creates concise, engaging captions for catering businesses." 
+          },
+          { role: "user", content: captionPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 500 // Reduced since we want shorter output
+      })
+    });
+    
+    if (!captionResponse.ok) {
+      const errorData = await captionResponse.json().catch(() => ({}));
+      throw new Error(`Caption API error: ${captionResponse.status} - ${JSON.stringify(errorData)}`);
+    }
+    
+    const captionData = await captionResponse.json();
+    const socialMediaCaption = captionData.choices[0].message.content;
+    
+    // Extract important business info and caption for the image prompt
+    const socialJson = extractJsonFromResponse(socialMediaCaption);
+    
+    // Step 2: Generate the image using Flux API
+    const imagePrompt = getSocialMediaImagePrompt(socialJson, businessName);
+    const imageUrl = await generateSocialMediaImage(imagePrompt);
+    
+    // Return the full result
+    return JSON.stringify({
+      socialMediaCaption,
+      imageUrl,
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        businessName: businessName
+      }
+    });
+    
+  } catch (error: any) {
+    console.error("Error generating social media post:", error);
+    throw error;
+  }
+}
+
+/**
+ * Helper function for streaming social media post generation
+ */
+async function generateSocialMediaStream(safeProfileData: any) {
+  const businessName = safeProfileData.businessName;
+  const encoder = new TextEncoder();
+  
+  // Create a readable stream for the entire process with proper error handling
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        // Go directly to caption writing, skipping the marketing concept step
+        controller.enqueue(encoder.encode("## SOCIAL MEDIA CAPTION ##\n\n"));
+        
+        // Generate social media caption directly
+        try {
+          const captionResponse = await profileAgent.stream([
+            { 
+              role: "system", 
+              content: "You are an expert social media copywriter who creates concise, engaging captions for catering businesses." 
+            },
+            { 
+              role: "user", 
+              content: getSocialMediaCaptionPrompt("", safeProfileData) 
+            }
+          ]);
+          
+          // Process the writer's response as it streams
+          const socialMediaCaption = await streamToString(captionResponse.textStream, 
+            (chunk) => controller.enqueue(encoder.encode(chunk)));
+          
+          // Step 2: Generate the social media image
+          controller.enqueue(encoder.encode("\n\n## GENERATING SOCIAL MEDIA IMAGE ##\n\n"));
+          controller.enqueue(encoder.encode("Creating your beautiful image...\n"));
+          
+          // Extract important business info for the image prompt
+          const socialJson = extractJsonFromResponse(socialMediaCaption);
+          
+          // Generate the image prompt
+          const imagePrompt = getSocialMediaImagePrompt(socialJson, businessName);
+          
+          try {
+            // Generate the image
+            const imageUrl = await generateSocialMediaImage(imagePrompt);
+            
+            // Send the image URL
+            controller.enqueue(encoder.encode("\n\n## SOCIAL MEDIA IMAGE URL ##\n\n"));
+            controller.enqueue(encoder.encode(imageUrl + "\n\n"));
+            
+            // Package everything as JSON at the end for easy parsing
+            const resultJson = JSON.stringify({
+              socialMediaCaption,
+              imageUrl,
+              metadata: {
+                generatedAt: new Date().toISOString(),
+                businessName
+              }
+            }, null, 2);
+            
+            // Send the final JSON
+            controller.enqueue(encoder.encode("## SOCIAL_MEDIA_DATA_JSON ##\n\n"));
+            controller.enqueue(encoder.encode(resultJson));
+            
+          } catch (error: any) {
+            // Handle image generation error
+            console.error("Error generating image:", error);
+            controller.enqueue(encoder.encode(`\n\nError generating image: ${error.message}\n\n`));
+            
+            // Still try to send the text parts as JSON
+            const resultJson = JSON.stringify({
+              socialMediaCaption,
+              error: error.message,
+              metadata: {
+                generatedAt: new Date().toISOString(),
+                businessName
+              }
+            }, null, 2);
+            
+            controller.enqueue(encoder.encode("## SOCIAL_MEDIA_DATA_JSON ##\n\n"));
+            controller.enqueue(encoder.encode(resultJson));
+          }
+          
+        } catch (error: any) {
+          // Handle streaming error
+          console.error("Error in streaming process:", error);
+          controller.enqueue(encoder.encode(`\n\nError: ${error.message}\n\n`));
+        }
+        
+        // Close the stream
+        controller.close();
+        
+      } catch (error: any) {
+        // Handle any unhandled errors
+        console.error("Unhandled error in social media stream:", error);
+        controller.enqueue(encoder.encode(`\n\nUnhandled error: ${error.message}\n\n`));
+        controller.close();
+      }
+    }
+  });
+}
+
+/**
+ * Helper function to create the marketing prompt for social media
+ */
+function getSocialMediaMarketingPrompt(profileData: any) {
+  const businessName = profileData.businessName;
+  const tagline = profileData.tagline || `${businessName} - Professional Catering`;
+  const description = profileData.enhancedDescription || 
+                      `${businessName} is a professional catering service offering quality food and exceptional service.`;
+  
+  // Extract relevant information from profile data
+  const serviceAreas = profileData.enhancedServiceAreas || "Local area";
+  const specialties = profileData.enhancedSpecialties || "Various catering options";
+  const uniquePoints = profileData.enhancedUniquePoints || "Quality service and delicious food";
+  
+  return `
+    I need you to create a marketing concept for a social media post promoting the catering business "${businessName}".
+    
+    BUSINESS INFORMATION:
+    
+    Tagline: ${tagline}
+    
+    Description: ${description}
+    
+    Service Areas: ${serviceAreas}
+    
+    Specialties: ${specialties}
+    
+    Unique Selling Points: ${uniquePoints}
+    
+    WHAT I NEED:
+    
+    Create a marketing concept for an eye-catching social media post that will showcase this catering business's offerings to potential clients.
+    The concept should be modern, engaging, and designed to attract attention on platforms like Instagram, Facebook, or LinkedIn.
+    
+    Your concept should:
+    1. Identify the core message we want to communicate
+    2. Suggest the tone (professional, casual, fun, elegant, etc.)
+    3. Recommend a visual theme or style for the image
+    4. Include ideas for key elements that should be included in the caption and image
+    
+    Please be specific and detailed in your recommendations.
+  `;
+}
+
+/**
+ * Helper function to create the social media caption prompt
+ */
+function getSocialMediaCaptionPrompt(marketingConcept: string, profileData: any) {
+  // Get the business name from the profile data
+  const businessName = profileData.businessName || profileData.business_name || "Your Catering Business";
+  
+  // Extract data from ai_profile_data if available
+  const aiProfileData = profileData.ai_profile_data || {};
+  
+  // Try to extract fields from the generated profile in ai_profile_data
+  const generatedProfile = aiProfileData.generatedProfile || aiProfileData;
+  
+  return `
+    Write a very concise social media caption (under 50 words) to promote the catering business: ${businessName}.
+    
+    The caption should:
+    1. Be conversational and natural (not sound AI-generated)
+    2. Avoid marketing clichés and buzzwords
+    3. Sound like something a real person would write
+    4. Have no hashtags
+    5. Stay under 50 words total
+    6. Include a simple call to action
+    
+    Use ONLY the information provided in the business profile below. Do not invent or assume specific dishes 
+    or services not mentioned in the profile data.
+    
+    Business profile data:
+    ${JSON.stringify(generatedProfile, null, 2)}
+    
+    Please also create a simple JSON structure with information for image generation:
+    
+    {
+      "businessName": "${businessName}",
+      "cateringType": "The type of catering based strictly on profile data",
+      "foodItems": "The specific food items mentioned in the profile, no inventions"
+    }
+    
+    Provide this JSON after your caption, marking it with "IMAGE GENERATION DATA:" before the JSON.
+  `;
+}
+
+/**
+ * Helper function to generate the image prompt for social media
+ */
+function getSocialMediaImagePrompt(socialJson: any, businessName: string) {
+  // Extract specific data from the socialJson
+  const cateringType = socialJson.cateringType || "professional catering";
+  const foodItems = socialJson.foodItems || "gourmet food";
+  
+  // Create a more generic food focus based on the business type
+  let foodFocus = "beautifully presented food items";
+  
+  // Check for specific specialty items without hardcoding particular food
+  if (foodItems.toLowerCase().includes("dessert") || foodItems.toLowerCase().includes("pastry") || foodItems.toLowerCase().includes("sweet")) {
+    foodFocus = "artfully displayed desserts and pastries";
+  } else if (foodItems.toLowerCase().includes("cake")) {
+    foodFocus = "beautifully decorated cakes";
+  } else if (foodItems.toLowerCase().includes("appetizer") || foodItems.toLowerCase().includes("starter")) {
+    foodFocus = "meticulously plated appetizers";
+  } else if (foodItems.toLowerCase().includes("seafood") || foodItems.toLowerCase().includes("fish")) {
+    foodFocus = "fresh seafood dishes with garnishes";
+  } else if (foodItems.toLowerCase().includes("bbq") || foodItems.toLowerCase().includes("grill")) {
+    foodFocus = "perfectly grilled dishes";
+  } else if (foodItems.toLowerCase().includes("vegan") || foodItems.toLowerCase().includes("vegetarian")) {
+    foodFocus = "colorful plant-based dishes";
+  } else {
+    // Use the actual food items from the profile
+    foodFocus = `beautifully presented ${foodItems}`;
+  }
+  
+  return `
+    A professional food photography image focusing on ${foodFocus} for ${cateringType} service.
+    
+    The main focus must be a detailed, close-up view of the food on an elegantly arranged catering table.
+    The food should be the star of the image - make it appear delicious, fresh, and expertly prepared.
+    Include beautiful tableware, garnishes, and presentation elements that highlight the food quality.
+    
+    Add a small, elegant card or signage that reads 'Catering by ${businessName}'.
+    Use bright, natural lighting to showcase the food's colors, textures, and details.
+    
+    DESIGN SPECIFICATIONS:
+    - Instagram/Facebook post format (square 1:1 ratio)
+    - High-resolution, professional quality
+    - Close-up, detailed food photography with shallow depth of field
+    - Professional lighting with good contrast
+    - NO text overlay (except for the small catering signage mentioned)
+    - NO watermarks or logos
+    
+    ABSOLUTELY CRITICAL:
+    - Create ONE SINGLE IMAGE that focuses primarily on the food described
+    - The image should look like a professional food photograph from a culinary magazine
+    - Food must be the main subject, taking up at least 70% of the frame
+    - No borders, frames, or device mockups
+    - No text on the image itself beyond what's specified
+    - The image should appear realistic and premium quality
+  `;
+}
+
+/**
+ * Helper function to generate the social media image
+ */
+async function generateSocialMediaImage(imagePrompt: string) {
+  // Get the Together API key for image generation
+  const togetherApiKey = await getTogetherApiKey();
+  
+  const imageResponse = await fetch('https://api.together.xyz/v1/images/generations', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${togetherApiKey}`
+    },
+    body: JSON.stringify({
+      model: "black-forest-labs/FLUX.1-schnell-Free",
+      prompt: imagePrompt,
+      negative_prompt: "mockup, device frame, multiple versions, template, 3D render, low quality, blurry text, text overlay, watermark, signature, cut off, cropped, multiple designs, example image, demo image, collage, multi-image layout, phone screen, screenshot",
+      n: 1,
+      width: 1024,  // Square format for social media
+      height: 1024, // Square format for social media
+      steps: 4,    // Maximum allowed steps for free version (1-4)
+      guidance_scale: 7.5, // Adjusted for free model
+      response_format: "url",
+      seed: Math.floor(Math.random() * 10000), // Random seed for variety
+      // Removed LoRA models as they might not be compatible with the free version
+    })
+  });
+  
+  if (!imageResponse.ok) {
+    const errorData = await imageResponse.json().catch(() => ({}));
+    throw new Error(`Flux API error: ${imageResponse.status} - ${JSON.stringify(errorData)}`);
+  }
+  
+  const imageData = await imageResponse.json();
+  return imageData.data[0].url;
 } 

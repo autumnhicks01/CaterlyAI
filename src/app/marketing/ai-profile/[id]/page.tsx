@@ -12,7 +12,7 @@ import { Sparkles, MapPin, Clock } from 'lucide-react'
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
 import { generateProfile } from "@/agents/profileAgent"
-import AIFlyerGenerator from "@/components/marketing/ai-flyer-generator"
+import AISocialMediaGenerator from "@/components/marketing/ai-flyer-generator"
 
 // Type definitions
 export interface StructuredProfile {
@@ -879,6 +879,15 @@ export default function AIProfilePage() {
   const businessNameString = getStringValue(structured.businessName || '');
   const yearsExperienceString = getStringValue(structured.yearsExperience || '');
 
+  // Extract catering manager info from user_input_data if available
+  const managerContactInfo = userData && 'managerContact' in userData ? 
+    String(userData.managerContact).split(',').map(item => item.trim()) : 
+    ['', ''];
+  
+  const managerName = managerContactInfo[0] || 'Not specified';
+  const managerEmail = managerContactInfo.length > 1 ? managerContactInfo[1] : '';
+  const managerTitle = 'Catering Manager';
+
   // Safely extract dishes and selling points, ensuring they're arrays
   const mostRequestedDishes = Array.isArray(structured.mostRequestedDishes) ? structured.mostRequestedDishes : [];
   const whyChooseUs = Array.isArray(structured.whyChooseUs) ? structured.whyChooseUs : [];
@@ -950,24 +959,23 @@ export default function AIProfilePage() {
                     </div>
                   </div>
                   
-                  {structured.contactPerson && (
-                    <div className="flex items-start">
-                      <div className="aspect-square w-12 h-12 relative rounded-full overflow-hidden border border-border flex-shrink-0 mr-3">
-                        <Image
-                          src={secondaryPhoto}
-                          alt="Contact person"
-                          fill
-                          className="object-cover"
-                        />
-                      </div>
-                      <div>
-                        <h4 className="font-medium">Contact Person:</h4>
-                        <p className="text-muted-foreground">
-                          {structured.contactPerson.name}, {structured.contactPerson.title}
-                        </p>
-                      </div>
+                  {/* Always show contact person with catering manager info */}
+                  <div className="flex items-start">
+                    <div className="aspect-square w-12 h-12 relative rounded-full overflow-hidden border border-border flex-shrink-0 mr-3">
+                      <Image
+                        src={secondaryPhoto}
+                        alt="Contact person"
+                        fill
+                        className="object-cover"
+                      />
                     </div>
-                  )}
+                    <div>
+                      <h4 className="font-medium">Contact Person:</h4>
+                      <p className="text-muted-foreground">
+                        {managerName}, {managerTitle}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               </div>
               
@@ -1067,46 +1075,43 @@ export default function AIProfilePage() {
               )}
               
               {/* Contact Information */}
-              {structured.contactInformation && (
-                <div>
-                  <h3 className="text-lg font-medium mb-2">Contact Information:</h3>
-                  <div className="space-y-1">
-                    {structured.contactInformation.phone && (
-                      <p className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                        </svg>
-                        {structured.contactInformation.phone}
-                      </p>
-                    )}
-                    {structured.contactInformation.email && (
-                      <p className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                        </svg>
-                        {structured.contactInformation.email}
-                      </p>
-                    )}
-                    {structured.contactInformation.socialMedia && 
-                     structured.contactInformation.socialMedia.map((social, i) => (
-                      <p key={i} className="flex items-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-                        </svg>
-                        {social}
-                      </p>
-                    ))}
-                  </div>
+              <div>
+                <h3 className="text-lg font-medium mb-2">Contact Information:</h3>
+                <div className="space-y-1">
+                  <p className="flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                    </svg>
+                    {contactPhone || (userData && userData.ownerContact) || 'Phone not specified'}
+                  </p>
+                  {managerEmail && (
+                    <p className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      {managerEmail}
+                    </p>
+                  )}
+                  {websiteUrl && (
+                    <p className="flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                      <a href={websiteUrl.startsWith('http') ? websiteUrl : `http://${websiteUrl}`} target="_blank" rel="noopener noreferrer" className="text-purple-600 hover:underline">
+                        {websiteUrl}
+                      </a>
+                    </p>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
           </CardContent>
         </Card>
         
-        {/* AI Flyer Generator */}
+        {/* AI Social Media Generator */}
         {aiProfile && (
           <div className="mb-8">
-            <AIFlyerGenerator 
+            <AISocialMediaGenerator 
               profileId={profileId}
               profileData={profile}
               aiProfileData={aiProfile}
