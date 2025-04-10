@@ -248,19 +248,23 @@ export default function ProfileSetupPage() {
         return
       }
       
-      // Instead of storing the full data URL, we'll use a placeholder URL
-      // This would normally be where you'd upload the image to a storage service
-      const newPhotos = [...photos]
+      // Create a file reader to convert image to Base64
+      const reader = new FileReader()
       
-      // Create a temporary URL for the UI preview
-      const temporaryUrl = URL.createObjectURL(file)
-      newPhotos[index] = temporaryUrl
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          // Get Base64 string
+          const base64String = event.target.result as string
+          
+          // Update the photos state with the Base64 string
+          const newPhotos = [...photos]
+          newPhotos[index] = base64String
+          setPhotos(newPhotos)
+        }
+      }
       
-      // Update the photos state
-      setPhotos(newPhotos)
-      
-      // In a real implementation, you'd upload the image to a storage service here
-      // and then use the returned URL instead
+      // Read the file as data URL (Base64)
+      reader.readAsDataURL(file)
     }
   }
 
@@ -499,8 +503,28 @@ To discuss your next event, contact ${ownerContact || "us"} ${managerContact ? `
       setSaveError(null);
       setSaveSuccess(null);
 
-      // Convert FormData to JSON
-      const profileData = Object.fromEntries(data.entries());
+      // Filter out placeholder images
+      const photoUrlsToSave = photos.filter(url => url && !url.includes('/placeholder.svg'));
+
+      // Convert FormData to an object
+      const formDataObj = Object.fromEntries(data.entries());
+      
+      // Add user_input_data with photos and other fields
+      const profileData = {
+        ...formDataObj,
+        user_input_data: {
+          yearsInOperation,
+          idealClients,
+          cuisineSpecialties,
+          uniqueSellingPoints,
+          eventSizes,
+          serviceTypes,
+          customizationOptions,
+          managerContact,
+          photo_urls: photoUrlsToSave,
+          coordinates: location.coordinates
+        }
+      };
       
       // Create or update the profile
       const response = await fetch('/api/profile', {

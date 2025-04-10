@@ -1,35 +1,19 @@
 import { NextResponse } from 'next/server';
-
-// Define updated global object types
-declare global {
-  var jobStorage: Map<string, {
-    url: string;
-    status: string;
-    result?: any;
-    message?: string;
-    startedAt: Date;
-    error?: any;
-  }>;
-  var firecrawlCalls: {
-    url: string;
-    timestamp: Date;
-    success: boolean;
-    error?: any;
-  }[];
-}
+import { jobStorage } from '../../url/route';
 
 export async function GET(
   request: Request,
   { params }: { params: { jobId: string } }
 ) {
   try {
-    // Ensure we properly destructure the params
+    console.log(`[ENRICHMENT] Received status request for job: ${params.jobId}`);
+    
+    // Get job ID from params
     const { jobId } = params;
-    console.log(`Received status request for job: ${jobId}`);
     
     // Check if global job storage exists
     if (!global.jobStorage) {
-      console.log(`No job storage found, job ${jobId} not found`);
+      console.log(`[ENRICHMENT] No job storage found, job ${jobId} not found`);
       return NextResponse.json(
         { error: 'Job not found' },
         { status: 404 }
@@ -38,7 +22,7 @@ export async function GET(
     
     // Get job data
     const jobData = global.jobStorage.get(jobId);
-    console.log(`Retrieved job data for ${jobId}: ${jobData ? 'found' : 'not found'}`);
+    console.log(`[ENRICHMENT] Retrieved job data for ${jobId}: ${jobData ? 'found' : 'not found'}`);
     
     if (!jobData) {
       return NextResponse.json(
@@ -85,30 +69,38 @@ export async function GET(
       estimatedRemainingSeconds = Math.max(1, Math.floor(totalEstimatedSeconds - elapsedSeconds));
     }
     
-    // Get Firecrawl call info for this job
-    let firecrawlInfo = null;
-    if (global.firecrawlCalls) {
-      firecrawlInfo = global.firecrawlCalls.find(call => call.url === jobData.url);
+    // Return appropriate response based on job status
+    if (jobData.status === 'error') {
+      return NextResponse.json({
+        status: 'error',
+        jobId,
+        message: jobData.message || 'An error occurred during processing',
+        progress,
+        elapsed: elapsedSeconds,
+        error: jobData.error
+      });
+    } else if (jobData.status === 'complete') {
+      console.log(`[ENRICHMENT] Returning complete status for job ${jobId}`);
+      return NextResponse.json({
+        status: 'complete',
+        jobId,
+        progress,
+        elapsed: elapsedSeconds,
+        result: jobData.result
+      });
+    } else {
+      return NextResponse.json({
+        status: jobData.status,
+        jobId,
+        progress,
+        elapsed: elapsedSeconds,
+        estimated_remaining: estimatedRemainingSeconds
+      });
     }
-    
-    // Return complete status information
-    console.log(`Returning complete status for job ${jobId}`);
-    return NextResponse.json({
-      jobId,
-      status: jobData.status,
-      progress,
-      elapsedMs,
-      elapsedSeconds,
-      startedAt: jobData.startedAt,
-      message: jobData.message,
-      result: jobData.status === 'complete' ? jobData.result : undefined,
-      error: jobData.status === 'error' ? jobData.error : undefined,
-      firecrawlInfo
-    });
   } catch (error) {
-    console.error(`Error checking job status:`, error);
+    console.error('[ENRICHMENT] Error retrieving job status:', error);
     return NextResponse.json(
-      { error: 'Failed to check job status' },
+      { error: 'Failed to retrieve job status' },
       { status: 500 }
     );
   }

@@ -126,213 +126,138 @@ export const extractWebsiteDataStep = new Step({
         }
         
         try {
-          console.log(`[FIRECRAWL] Environment check - API key length: ${process.env.FIRECRAWL_API_KEY?.length}`);
+          console.log(`[extractContent] Extracting data from ${websiteUrl} using Firecrawl...`);
           
           const startTime = Date.now();
           
-          // Use the updated approach with wildcards and schema for better extraction
-          try {
-            console.log(`[FIRECRAWL] Using improved extraction with schema for: ${websiteUrl}`);
-            
-            // Add wildcard to crawl the entire site for better results
-            const urlWithWildcard = websiteUrl.endsWith('/') ? `${websiteUrl}*` : `${websiteUrl}/*`;
-            console.log(`[FIRECRAWL] Using wildcard URL pattern: ${urlWithWildcard}`);
-            
-            // Define a proper schema for venue extraction
-            const extractSchema = {
-              type: "object",
-              properties: {
-                venueName: { type: "string", description: "Name of the venue" },
-                physicalAddress: { type: "string", description: "Complete physical address of the venue including street, city, state and zip code" },
-                contactInformation: {
-                  type: "object",
-                  properties: {
-                    phone: { type: "string", description: "Main contact phone number for the venue" },
-                    email: { type: "string", description: "IMPORTANT: Main contact email address for the venue - search thoroughly in contact forms and pages" },
-                    contactPersonName: { type: "string", description: "Name of the main contact person" }
-                  },
-                  required: ["email", "phone"]
-                },
-                managementContact: {
-                  type: "object",
-                  properties: {
-                    managementContactName: { type: "string", description: "Name of the venue/event manager" },
-                    managementContactEmail: { type: "string", description: "CRITICAL: Email of the venue/event manager - search extensively in all pages and forms" },
-                    managementContactPhone: { type: "string", description: "Phone number of the venue/event manager" }
-                  },
-                  required: ["managementContactEmail"]
-                },
-                eventTypes: { 
-                  type: "array", 
-                  items: { type: "string" },
-                  description: "Types of events hosted at the venue (weddings, corporate, etc.)" 
-                },
-                venueCapacity: { type: "string", description: "The capacity/maximum occupancy of the venue" },
-                inHouseCatering: { type: "boolean", description: "Whether the venue offers in-house catering" },
-                amenities: { 
-                  type: "array", 
-                  items: { type: "string" },
-                  description: "List of amenities offered by the venue" 
-                },
-                preferredCaterers: { 
-                  type: "array", 
-                  items: { type: "string" },
-                  description: "List of preferred caterers if any" 
-                },
-                pricingInformation: { type: "string", description: "Pricing information for the venue" },
-                description: { type: "string", description: "A brief description of the venue" },
-                eventDetails: {
-                  type: "array",
-                  items: {
+          // Call Firecrawl API to extract structured data from the URL
+          const extractResponse = await fetch('https://api.firecrawl.dev/v1/extract', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`
+            },
+            body: JSON.stringify({ 
+              urls: [websiteUrl],
+              prompt: 'Extract comprehensive venue information',
+              schema: {
+                type: "object",
+                properties: {
+                  venueName: { type: "string", description: "Name of the venue" },
+                  physicalAddress: { type: "string", description: "Complete physical address of the venue including street, city, state and zip code" },
+                  contactInformation: {
                     type: "object",
                     properties: {
-                      eventName: { type: "string" },
-                      eventDate: { type: "string" }
-                    }
+                      phone: { type: "string", description: "Main contact phone number for the venue" },
+                      email: { type: "string", description: "IMPORTANT: Main contact email address for the venue - search thoroughly in contact forms and pages" },
+                      contactPersonName: { type: "string", description: "Name of the main contact person" }
+                    },
+                    required: ["email", "phone"]
                   },
-                  description: "Details of recent or upcoming events at the venue"
-                }
+                  managementContact: {
+                    type: "object",
+                    properties: {
+                      managementContactName: { type: "string", description: "Name of the venue/event manager" },
+                      managementContactEmail: { type: "string", description: "CRITICAL: Email of the venue/event manager - search extensively in all pages and forms" },
+                      managementContactPhone: { type: "string", description: "Phone number of the venue/event manager" }
+                    },
+                    required: ["managementContactEmail"]
+                  },
+                  eventTypes: { 
+                    type: "array", 
+                    items: { type: "string" },
+                    description: "Types of events hosted at the venue (weddings, corporate, etc.)" 
+                  },
+                  venueCapacity: { type: "string", description: "The capacity/maximum occupancy of the venue" },
+                  inHouseCatering: { type: "boolean", description: "Whether the venue offers in-house catering" },
+                  amenities: { 
+                    type: "array", 
+                    items: { type: "string" },
+                    description: "List of amenities offered by the venue" 
+                  },
+                  preferredCaterers: { 
+                    type: "array", 
+                    items: { type: "string" },
+                    description: "List of preferred caterers if any" 
+                  },
+                  pricingInformation: { type: "string", description: "Pricing information for the venue" },
+                  description: { type: "string", description: "A brief description of the venue" },
+                  eventDetails: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        eventName: { type: "string" },
+                        eventDate: { type: "string" }
+                      }
+                    },
+                    description: "Details of recent or upcoming events at the venue"
+                  }
+                },
+                required: ["contactInformation"]
               },
-              required: ["contactInformation"]
+              enableWebSearch: true
+            })
+          });
+          
+          // Check response
+          const responseData = await extractResponse.json();
+          console.log(`[extractContent] Extract API response status: ${extractResponse.status}`);
+          
+          // Handle different response formats
+          let extractionResult: { success: boolean; data: any; error: string | null; url?: string } = { 
+            success: false, 
+            data: null, 
+            error: 'Unknown error' 
+          };
+          
+          if (responseData.success === true && responseData.data) {
+            // Direct success response
+            extractionResult = { 
+              success: true, 
+              data: responseData.data,
+              error: null,
+              url: websiteUrl
             };
-
-            const extractPrompt = `
-            Extract comprehensive venue information from this website, formatted exactly according to the provided schema.
+            console.log(`[extractContent] Extraction successful with direct response`);
+          } else if (responseData.status === "processing" || responseData.job_id) {
+            // Async job - poll for results
+            const jobId = responseData.job_id;
+            console.log(`[checkFirecrawlJobStatus] Got job ID for polling: ${jobId}`);
             
-            *** MOST CRITICAL REQUIREMENT: Find at least one valid email address for contacting the venue. ***
-            
-            Specifically look for and extract:
-            1. The venue name and complete physical address
-            2. All contact information including phone, email, and contact person details
-            3. Types of events hosted (be specific: weddings, corporate events, etc.)
-            4. Venue capacity numbers
-            5. Whether they offer in-house catering (true/false)
-            6. Complete list of amenities offered
-            7. List of preferred caterers (if mentioned)
-            8. Any pricing information available
-            9. A concise description of the venue
-            
-            EMAIL EXTRACTION INSTRUCTIONS (HIGHEST PRIORITY):
-            - Search thoroughly for ANY email addresses on the site, especially in:
-              * "Contact Us" pages
-              * Staff/Team directories
-              * Footer sections
-              * Inquiry/booking forms (examine form fields and surrounding text)
-              * Event planning or rental information pages
-              * PDF brochures or documents linked from the site
-            - Look for text patterns like "Email:", "Contact:", or email addresses directly
-            - Check for JavaScript-based email protection and decode if needed
-            - If an email is displayed as an image, note this in your response
-            - Check both general contact emails and specific staff emails
-            
-            IMPORTANT: If you find multiple emails, prioritize ones for:
-            1. Event managers/coordinators
-            2. Sales/booking contacts
-            3. General inquiries
-            
-            If in-house catering is mentioned anywhere, mark it as true. 
-            If preferred or exclusive caterers are listed, capture all of them accurately.
-            
-            If you can't find specific information for a field, leave it empty rather than guessing.
-            `;
-            
-            // Make direct API call for extraction
-            const extractResponse = await fetch('https://api.firecrawl.dev/extract', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`
-              },
-              body: JSON.stringify({ 
-                urls: [urlWithWildcard],
-                prompt: extractPrompt,
-                schema: extractSchema,
-                enableWebSearch: true
-              })
-            });
-            
-            // Check response
-            const responseData = await extractResponse.json();
-            console.log(`[FIRECRAWL] Extract API response status: ${extractResponse.status}`);
-            
-            // Handle different response formats
-            let extractionResult: { success: boolean; data: any; error: string | null; url?: string } = { 
-              success: false, 
-              data: null, 
-              error: 'Unknown error' 
-            };
-            
-            if (responseData.success === true && responseData.data) {
-              // Direct success response
-              extractionResult = { 
-                success: true, 
-                data: responseData.data,
-                error: null,
-                url: websiteUrl
-              };
-              console.log(`[FIRECRAWL] Extraction successful with direct response`);
-            } else if (responseData.status === "processing" || responseData.job_id) {
-              // Async job - poll for results
-              const jobId = responseData.job_id;
-              console.log(`[FIRECRAWL] Got job ID for polling: ${jobId}`);
-              
-              // Poll for results
-              if (process.env.FIRECRAWL_API_KEY) {
-                extractionResult = await pollForResults(jobId, process.env.FIRECRAWL_API_KEY);
-              } else {
-                console.error('[FIRECRAWL] API key not available for polling');
-                extractionResult = {
-                  success: false,
-                  data: null,
-                  error: 'API key not available for polling'
-                };
-              }
+            // Poll for results
+            if (process.env.FIRECRAWL_API_KEY) {
+              extractionResult = await pollForResults(jobId, process.env.FIRECRAWL_API_KEY);
             } else {
-              console.log(`[FIRECRAWL] Unexpected response format, trying to handle anyway`);
-              extractionResult = { 
-                success: responseData.success || false, 
-                data: responseData.data || responseData,
-                error: responseData.error || 'Unexpected response format',
-                url: websiteUrl
+              console.error('[checkFirecrawlJobStatus] API key not available for polling');
+              extractionResult = {
+                success: false,
+                data: null,
+                error: 'API key not available for polling'
               };
             }
-            
-            console.log(`[FIRECRAWL] Final extraction result status for ${lead.name}: ${extractionResult.success ? 'Success' : 'Failed'}`);
-            const extractionTime = (Date.now() - startTime) / 1000;
-            console.log(`[FIRECRAWL] Lead ${lead.id} - Website content extraction completed in ${extractionTime.toFixed(2)}s`);
-            
-            return {
-              leadId: lead.id,
-              websiteData: extractionResult.data,
-              rawData: extractionResult.data,
-              success: extractionResult.success,
-              error: extractionResult.error,
-              lead
-            };
-          } catch (schemaError) {
-            console.log(`[FIRECRAWL] Schema-based extraction failed, falling back to normal extraction`);
-            console.error(`[FIRECRAWL] Schema extraction error:`, schemaError);
-            
-            // Fall back to the original extraction method
-            const extractionResult = await firecrawlTool.extract({
-              urls: [websiteUrl],
-              waitTime: 8000,
-              enableWebSearch: false,
-              includeHtml: true,
-              extractMetadata: true,
-              waitUntil: 'networkidle0',
-              formats: ['text', 'markdown']
-            });
-            
-            return {
-              leadId: lead.id,
-              websiteData: extractionResult.data,
-              rawData: extractionResult.data,
-              success: extractionResult.success,
-              error: extractionResult.error,
-              lead
+          } else {
+            console.log(`[extractContent] Unexpected response format, trying to handle anyway`);
+            extractionResult = { 
+              success: responseData.success || false, 
+              data: responseData.data || responseData,
+              error: responseData.error || 'Unexpected response format',
+              url: websiteUrl
             };
           }
+          
+          console.log(`[extractContent] Final extraction result status for ${lead.name}: ${extractionResult.success ? 'Success' : 'Failed'}`);
+          const extractionTime = (Date.now() - startTime) / 1000;
+          console.log(`[extractContent] Lead ${lead.id} - Website content extraction completed in ${extractionTime.toFixed(2)}s`);
+          
+          return {
+            leadId: lead.id,
+            websiteData: extractionResult.data,
+            rawData: extractionResult.data,
+            success: extractionResult.success,
+            error: extractionResult.error,
+            lead
+          };
         } catch (error) {
           console.error(`Error extracting data for lead ${lead.id}:`, error);
           return {
@@ -948,9 +873,9 @@ async function pollForResults(jobId: string, apiKey: string): Promise<{ success:
   while (!extractionComplete && retries < maxRetries) {
     await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds between polls
     
-    console.log(`[FIRECRAWL] Checking status for job ${jobId}, attempt ${retries + 1}/${maxRetries}`);
+    console.log(`[checkFirecrawlJobStatus] Checking status for job ${jobId}, attempt ${retries + 1}/${maxRetries}`);
     try {
-      const statusResponse = await fetch(`https://api.firecrawl.dev/extract/${jobId}`, {
+      const statusResponse = await fetch(`https://api.firecrawl.dev/v1/extract/${jobId}`, {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${apiKey}`
@@ -960,7 +885,7 @@ async function pollForResults(jobId: string, apiKey: string): Promise<{ success:
       const statusData = await statusResponse.json();
       
       if (statusData.status === "completed") {
-        console.log(`[FIRECRAWL] Extraction completed for job ${jobId}`);
+        console.log(`[checkFirecrawlJobStatus] Extraction completed for job ${jobId}`);
         result = { 
           success: true, 
           data: statusData.data,
@@ -968,7 +893,7 @@ async function pollForResults(jobId: string, apiKey: string): Promise<{ success:
         };
         extractionComplete = true;
       } else if (statusData.status === "failed") {
-        console.log(`[FIRECRAWL] Job failed: ${statusData.error || 'Unknown error'}`);
+        console.log(`[checkFirecrawlJobStatus] Job failed: ${statusData.error || 'Unknown error'}`);
         result = { 
           success: false, 
           data: null,
@@ -976,11 +901,11 @@ async function pollForResults(jobId: string, apiKey: string): Promise<{ success:
         };
         extractionComplete = true;
       } else {
-        console.log(`[FIRECRAWL] Extraction in progress: ${statusData.status}, retrying in 3s...`);
+        console.log(`[checkFirecrawlJobStatus] Extraction in progress: ${statusData.status}, retrying in 3s...`);
         retries++;
       }
     } catch (error) {
-      console.error(`[FIRECRAWL] Error polling for job ${jobId}:`, error);
+      console.error(`[checkFirecrawlJobStatus] Error polling for job ${jobId}:`, error);
       retries++;
     }
   }

@@ -262,11 +262,6 @@ export default function ProfilePage() {
                 </div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
-                  <Button variant="outline" size="sm" onClick={() => router.push(`/marketing/ai-profile/${profile.id}`)}>
-                    <Sparkles className="h-4 w-4 mr-2 text-purple-500" />
-                    AI Enhanced Profile
-                  </Button>
-                  
                   {yearsInBusiness && (
                     <Badge variant="outline" className="bg-secondary/40 border-blue-500/20">
                       {yearsInBusiness} years in business
@@ -287,102 +282,45 @@ export default function ProfilePage() {
             <div className="text-sm text-gray-500">
               {profile.created_at && `Created on ${new Date(profile.created_at).toLocaleDateString()}`}
             </div>
-            <div className="flex space-x-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className="text-orange-600 border-orange-200 hover:bg-orange-50"
-                onClick={handleResetProfile}
-                disabled={isResetting}
-              >
-                {isResetting ? "Resetting..." : "Reset Profile"}
-              </Button>
-              <Link href="/profile/account">
-                <Button variant="outline" size="sm">
-                  Account Settings
-                </Button>
-              </Link>
-            </div>
           </CardFooter>
         </Card>
         
-        {/* AI Profile Card */}
+        {/* AI Marketing Profile Card */}
         <Card className="bg-gradient-to-br from-purple-50 to-blue-50 border-purple-100">
           <CardHeader>
-            <CardTitle className="text-purple-800">AI-Enhanced Business Profile</CardTitle>
+            <CardTitle className="text-purple-800">AI-Enhanced Marketing Profile</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-gray-700">
               {hasAIProfile ? (
-                <p>Your AI-enhanced profile is ready! This professional profile showcases your business
-                in a way that highlights your unique offerings and attracts ideal clients.</p>
+                <p>Your AI-enhanced marketing profile is ready! This professional profile showcases your business
+                in a way that highlights your unique offerings and attracts ideal clients, including AI-generated 
+                social media photos and other marketing materials.</p>
               ) : (
-                <p>Generate an AI-enhanced profile to showcase your business in a professional way that 
-                highlights your unique selling points and attracts your ideal clients.</p>
+                <p>Generate an AI-enhanced marketing profile to showcase your business professionally with social media photos
+                and marketing materials that highlight your unique selling points and attract your ideal clients.</p>
               )}
             </div>
           </CardContent>
           <CardFooter>
-            {hasAIProfile ? (
-              <div className="w-full flex flex-col sm:flex-row gap-3">
-                <Button 
-                  className="flex-1 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                  onClick={() => {
-                    try {
-                      if (profile?.id) {
-                        window.location.href = `/marketing/ai-profile/${profile.id}`;
-                      } else {
-                        console.error("No profile ID available for redirection");
-                        window.location.href = "/profile/setup";
-                      }
-                    } catch (error) {
-                      console.error("Error navigating to AI profile:", error);
-                      router.push("/profile/setup");
-                    }
-                  }}
-                >
-                  View AI Profile
-                </Button>
-                <Button 
-                  className="flex-1 bg-gradient-to-r from-green-600 to-teal-600 hover:from-green-700 hover:to-teal-700"
-                  onClick={() => {
-                    try {
-                      if (profile?.id) {
-                        // Add a flag to force regeneration
-                        window.location.href = `/marketing/ai-profile/${profile.id}?forceRegenerate=true`;
-                      } else {
-                        console.error("No profile ID available for redirection");
-                        window.location.href = "/profile/setup";
-                      }
-                    } catch (error) {
-                      console.error("Error navigating to AI profile:", error);
-                      router.push("/profile/setup");
-                    }
-                  }}
-                >
-                  Regenerate AI Profile
-                </Button>
-              </div>
-            ) : (
-              <Button 
-                className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-                onClick={() => {
-                  try {
-                    if (profile?.id) {
-                      window.location.href = `/marketing/ai-profile/${profile.id}`;
-                    } else {
-                      console.error("No profile ID available for redirection");
-                      window.location.href = "/profile/setup";
-                    }
-                  } catch (error) {
-                    console.error("Error navigating to AI profile:", error);
-                    router.push("/profile/setup");
+            <Button 
+              className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+              onClick={() => {
+                try {
+                  if (profile?.id) {
+                    window.location.href = `/marketing/ai-profile/${profile.id}?forceRegenerate=true`;
+                  } else {
+                    console.error("No profile ID available for redirection");
+                    window.location.href = "/profile/setup";
                   }
-                }}
-              >
-                Generate AI Profile
-              </Button>
-            )}
+                } catch (error) {
+                  console.error("Error navigating to AI profile:", error);
+                  router.push("/profile/setup");
+                }
+              }}
+            >
+              Create AI Marketing Profile
+            </Button>
           </CardFooter>
         </Card>
         

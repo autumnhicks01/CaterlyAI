@@ -189,8 +189,10 @@ export async function updateLeadWithEnrichment(leadId: string, enrichmentData: a
 
 /**
  * Enrich a single lead
+ * @deprecated Use the new lib/enrichment module instead for a more streamlined approach
  */
 export async function enrichLead(lead: any) {
+  console.warn('[API-UTILS] The enrichLead function is deprecated. Please use the lib/enrichment module instead.');
   if (!lead) {
     return { success: false, error: 'No lead provided' };
   }
@@ -202,8 +204,22 @@ export async function enrichLead(lead: any) {
 
     console.log(`[API-UTILS] Enriching lead ${lead.id}: ${lead.name} (${lead.website_url})`);
     
-    // Make a direct call to the test-url-enrichment endpoint that's working correctly
-    const enrichmentResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/tests/enrich-url`, {
+    // Make sure we have a valid absolute URL for the API call
+    let baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
+    // If running in dev/local environment and baseUrl is not set, use a default localhost URL
+    if (!baseUrl) {
+      const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+      const host = process.env.VERCEL_URL || 'localhost:3000';
+      baseUrl = `${protocol}://${host}`;
+    }
+    
+    // Ensure baseUrl doesn't end with a slash to avoid double slashes
+    baseUrl = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    
+    const enrichmentUrl = `${baseUrl}/api/tests/enrich-url`;
+    console.log(`[API-UTILS] Calling enrichment endpoint: ${enrichmentUrl}`);
+    
+    const enrichmentResponse = await fetch(enrichmentUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -238,8 +254,11 @@ export async function enrichLead(lead: any) {
       attempts++;
 
       try {
-        // Check job status
-        const statusResponse = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/tests/enrich-url/status?jobId=${jobId}`);
+        // Check job status using the correct URL format
+        const statusUrl = `${baseUrl}/api/tests/enrich-status/${jobId}`;
+        console.log(`[API-UTILS] Checking status for job ${jobId} (attempt ${attempts}/${maxAttempts}): ${statusUrl}`);
+        
+        const statusResponse = await fetch(statusUrl);
         
         if (!statusResponse.ok) {
           console.warn(`[API-UTILS] Job status check failed (attempt ${attempts}): ${statusResponse.status}`);
@@ -247,6 +266,7 @@ export async function enrichLead(lead: any) {
         }
 
         const jobStatus = await statusResponse.json();
+        console.log(`[API-UTILS] Job status: ${jobStatus.status}`);
         
         if (jobStatus.status === 'complete') {
           enrichmentComplete = true;
@@ -255,7 +275,7 @@ export async function enrichLead(lead: any) {
         } else if (jobStatus.status === 'error') {
           throw new Error(`Enrichment failed: ${jobStatus.message}`);
         } else {
-          console.log(`[API-UTILS] Job still processing (attempt ${attempts}/${maxAttempts}): ${jobStatus.status}`);
+          console.log(`[API-UTILS] Job still processing (${jobStatus.status}), will check again...`);
         }
       } catch (pollError) {
         console.error(`[API-UTILS] Error checking job status:`, pollError);

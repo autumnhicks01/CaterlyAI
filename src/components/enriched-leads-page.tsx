@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,6 +12,7 @@ import { useCaterly } from "@/app/context/caterly-context"
 import { mapToOutreachCategory } from "@/config/categoryMapping"
 import axios from 'axios'
 import { toast } from "@/hooks/use-toast"
+import { businessService } from "@/lib/services/businessService"
 
 // Define interfaces for Lead and EnrichmentData based on the Supabase schema
 interface EnrichmentData {
@@ -439,217 +440,100 @@ export default function EnrichedLeadsPage() {
       // Store the processing lead IDs for checking completion later
       localStorage.setItem('enrichment_leads', JSON.stringify(selectedLeads));
       
-      // Set local storage for tracking in case the page refreshes
-      localStorage.setItem('enrichment_status', 'processing');
-      localStorage.setItem('enrichment_count', selectedLeads.length.toString());
-      localStorage.setItem('enrichment_start_time', new Date().toISOString());
-      
-      // Set a longer processing timeout - Firecrawl can take time
-      const processingTimeoutSeconds = selectedLeads.length * 30; // 30 seconds per lead
-      localStorage.setItem('enrichment_timeout', (Date.now() + (processingTimeoutSeconds * 1000)).toString());
-      
-      // Log the start of the process
-      console.log(`[ENRICHED-PAGE] Starting enrichment for ${selectedLeads.length} leads with timeout of ${processingTimeoutSeconds}s`);
-      
       // Create a new, more informative URL
       router.replace(`/leads/enriched?status=loading&count=${selectedLeads.length}`);
       
-      // Show a progress indication
-      setEnrichmentProgress(10);
-      
-      // Delay a bit to show the loading state
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      // Extract lead IDs
-      const leadIds = selectedLeads;
-      const initialLoadingMessage = `Sending ${leadIds.length} leads to enrichment API...`;
-      setLoadingMessage(initialLoadingMessage);
-      localStorage.setItem('firecrawl_loading_message', initialLoadingMessage);
-      setEnrichmentProgress(20);
-      
-      // Make the initial API request to kick off the process
-      const response = await fetch('/api/leads/enrich', {
-        method: 'POST',
+      // Fetch the selected leads from the database
+      const response = await fetch('/api/leads/saved', {
+        method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ leadIds }),
+        }
       });
       
-      // First check if the response is OK
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Enrichment API returned status ${response.status}: ${errorText}`);
+        throw new Error(`Failed to fetch leads: ${response.status}`);
       }
       
-      // Check for Firecrawl processing headers
-      const isProcessing = response.headers.get('X-Firecrawl-Processing') === 'true';
-      const totalLeads = parseInt(response.headers.get('X-Firecrawl-Total-Leads') || '0', 10);
-      const expectedDuration = parseInt(response.headers.get('X-Firecrawl-Expected-Duration') || '0', 10);
+      const { leads } = await response.json();
       
-      if (isProcessing) {
-        console.log(`[ENRICHED-PAGE] Firecrawl processing detected: ${totalLeads} leads, expected duration: ${expectedDuration}s`);
-        
-        // Store this in localStorage for the long-running process
-        localStorage.setItem('firecrawl_processing', 'true');
-        localStorage.setItem('firecrawl_total_leads', totalLeads.toString());
-        localStorage.setItem('firecrawl_expected_duration', expectedDuration.toString());
-        localStorage.setItem('firecrawl_start_time', Date.now().toString());
-        
-        // Start polling for completion
-        startPollingForCompletion();
-        
-        // Update progress to processing state (50%)
-        setEnrichmentProgress(50);
-        const processingMessage = `Processing ${leadIds.length} leads with new enrichment process...`;
-        setLoadingMessage(processingMessage);
-        localStorage.setItem('firecrawl_loading_message', processingMessage);
-        
-        // Then parse the JSON (initial response with processing info)
-        const initialResult = await response.json();
-        console.log('[ENRICHED-PAGE] Initial enrichment response:', initialResult);
-        
-        // Don't complete the process yet - let the polling handle it
-        // Just update the UI with more info
-        const detailedMessage = `Enriching ${leadIds.length} venue websites. This will take approximately ${Math.ceil(expectedDuration/60)} minutes.`;
-        setLoadingMessage(detailedMessage);
-        localStorage.setItem('firecrawl_loading_message', detailedMessage);
-        
-        // Start a direct batch process for faster results if the user has few leads (<5)
-        if (leadIds.length <= 5) {
-          try {
-            console.log('[ENRICHED-PAGE] Small batch detected, starting direct batch processing');
-            
-            // Use the batch API to process leads immediately
-            const batchResponse = await fetch('/api/leads/enrich/batch', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({ leadIds }),
-            });
-            
-            if (batchResponse.ok) {
-              const batchResult = await batchResponse.json();
-              console.log('[ENRICHED-PAGE] Batch processing complete:', batchResult);
-              
-              if (batchResult.success) {
-                // Handle successful completion
-                localStorage.removeItem('firecrawl_processing');
-                localStorage.removeItem('firecrawl_total_leads');
-                localStorage.removeItem('firecrawl_expected_duration');
-                localStorage.removeItem('firecrawl_start_time');
-                localStorage.removeItem('enrichment_leads');
-                localStorage.removeItem('firecrawl_loading_message');
-                
-                // Remove navigation blocker
-                window.onbeforeunload = null;
-                
-                // Set success state
-                localStorage.setItem('enrichment_status', 'success');
-                setIsLoading(false);
-                setLoadingMessage('');
-                setEnrichmentProgress(100);
-                
-                // Display success message with email info
-                const successMessage = `Successfully enriched ${batchResult.results.succeeded} leads${
-                  batchResult.results.emailsFound > 0 ? ` (${batchResult.results.emailsFound} with emails)` : ''
-                }`;
-                
-                setSuccessMessage(successMessage);
-                setMessageType('success');
-                
-                // Show toast notification
-                toast({
-                  title: "Enrichment Complete",
-                  description: successMessage,
-                  variant: "default",
-                });
-                
-                // Refresh the leads list
-                fetchLeads();
-                
-                // Update URL to remove loading state
-                router.replace('/leads/enriched');
-              }
-            }
-          } catch (batchError) {
-            console.error('[ENRICHED-PAGE] Error in batch processing:', batchError);
-            // Continue with polling - the batch process is just a speed optimization
-          }
-        }
-        
-        // We won't resolve the process here - it'll be handled by the polling
-        return;
+      // Filter to just the selected leads
+      const selectedLeadsData = leads.filter((lead: any) => selectedLeads.includes(lead.id));
+      
+      if (selectedLeadsData.length === 0) {
+        throw new Error('No lead data found for the selected leads');
       }
       
-      // If we're here, no processing headers were found - handle as before
-      const result = await response.json();
-      console.log('[ENRICHED-PAGE] Enrichment result:', result);
+      setLoadingMessage(`Processing ${selectedLeadsData.length} leads...`);
+      setEnrichmentProgress(20);
       
-      setEnrichmentProgress(90);
+      // Use the businessService to enrich the leads
+      const enrichmentResult = await businessService.enrichBusinesses(selectedLeadsData);
       
-      // Check for success or failure
-      if (result.success) {
-        setEnrichmentProgress(100);
-        // Store results in localStorage for reliable state after refresh
-        localStorage.setItem('enrichment_status', 'success');
-        localStorage.setItem('enrichment_count', result.count.toString());
-        
-        // Direct success handling
-        setIsEnriching(false);
-        setLoadingMessage('');
-        setSuccessMessage(`Successfully enriched ${result.count} leads${result.emailCount ? ` (${result.emailCount} with emails)` : ''}`);
-        setMessageType('success');
-        
-        // Show toast notification
-        toast({
-          title: "Enrichment Complete",
-          description: `Successfully enriched ${result.count} leads${result.emailCount ? ` (${result.emailCount} with emails)` : ''}`,
-          variant: "default",
-        });
-        
-        // Refresh the leads list
-        fetchLeads();
-        
-        // Clear selection
-        setSelectedLeads([]);
-        setSelectAll(false);
-        
-        // Remove URL params
-        router.replace('/leads/enriched');
-      } else {
-        throw new Error(result.error || 'Unknown error during enrichment');
+      // Handle success or failure
+      if (enrichmentResult.error) {
+        throw new Error(enrichmentResult.error);
       }
-    } catch (error) {
-      console.error('[ENRICHED-PAGE] Enrichment error:', error);
       
-      // Store error in localStorage for reliable state after refresh
-      localStorage.setItem('enrichment_status', 'error');
-      localStorage.setItem('enrichment_error', error instanceof Error ? error.message : String(error));
+      const enrichedLeads = enrichmentResult.businesses || [];
       
-      // Direct error handling
+      // Calculate successful email count
+      const emailCount = enrichedLeads.filter((lead: any) => 
+        lead.contact_email || (lead.enrichment_data && lead.enrichment_data.eventManagerEmail)
+      ).length;
+      
+      setEnrichmentProgress(100);
+      
+      // Clear processing state
       setIsEnriching(false);
-      setError(error instanceof Error ? error.message : 'Failed to enrich leads');
-      setMessageType('error');
       setLoadingMessage('');
+      
+      // Show success message
+      setSuccessMessage(`Successfully enriched ${enrichedLeads.length} leads${
+        emailCount > 0 ? ` (${emailCount} with emails)` : ''
+      }`);
+      setMessageType('success');
+      
+      // Show toast notification
+      toast({
+        title: "Enrichment Complete",
+        description: `Successfully enriched ${enrichedLeads.length} leads${
+          emailCount > 0 ? ` (${emailCount} with emails)` : ''
+        }`,
+        variant: "default",
+      });
+      
+      // Reset selected leads
+      setSelectedLeads([]);
+      
+      // Refresh the leads list to show the newly enriched data
+      fetchLeads();
+      
+      // Update URL to remove loading state
+      router.replace('/leads/enriched');
+      
+    } catch (error) {
+      console.error('[ENRICHED-PAGE] Error enriching leads:', error);
+      
+      // Update error state
+      setIsEnriching(false);
+      setLoadingMessage('');
+      setSuccessMessage('');
+      setEnrichmentProgress(0);
+      
+      // Show error message
+      setMessageType('error');
+      setError(error instanceof Error ? error.message : 'An error occurred while enriching leads');
       
       // Show toast notification
       toast({
         title: "Enrichment Failed",
-        description: error instanceof Error ? error.message : 'Failed to enrich leads',
+        description: error instanceof Error ? error.message : 'An error occurred while enriching leads',
         variant: "destructive",
       });
       
-      // Try to refresh leads anyway in case some were processed
-      fetchLeads();
-      
-      // Remove URL params
+      // Update URL to remove loading state
       router.replace('/leads/enriched');
-    } finally {
-      // Clean up internal state
-      setIsEnriching(false);
-      setProcessingLeads([]);
     }
   };
 
@@ -971,59 +855,24 @@ export default function EnrichedLeadsPage() {
         
         <div className="flex flex-col sm:flex-row gap-2">
           {!isLoading && (
-            <>
-              <Button 
-                onClick={() => router.push('/leads/discovery')} 
-                variant="outline"
-                className="w-full sm:w-auto"
-              >
-                Back to Discovery
-              </Button>
-              
-              <Button 
-                onClick={enrichSelectedLeads} 
-                disabled={selectedLeads.length === 0 || isEnriching || isLoading} 
-                className="w-full sm:w-auto"
-              >
-                {isEnriching ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Enriching...
-                  </>
-                ) : (
-                  <>Enrich Selected</>
-                )}
-              </Button>
-              
-              <Button 
-                onClick={launchAICampaign} 
-                disabled={selectedLeads.length === 0 || isLaunchingCampaign || isLoading} 
-                className="w-full sm:w-auto"
-              >
-                {isLaunchingCampaign ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  <>
-                    <SendIcon className="mr-2 h-4 w-4" />
-                    Launch Campaign
-                  </>
-                )}
-              </Button>
-            </>
+            <Button 
+              onClick={launchAICampaign} 
+              disabled={selectedLeads.length === 0 || isLaunchingCampaign || isLoading} 
+              className="w-full sm:w-auto"
+            >
+              {isLaunchingCampaign ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Creating...
+                </>
+              ) : (
+                <>
+                  <SendIcon className="mr-2 h-4 w-4" />
+                  Launch Campaign
+                </>
+              )}
+            </Button>
           )}
-          
-          <Button 
-            onClick={() => fetchLeads()} 
-            variant="ghost" 
-            disabled={isRefreshing || isLoading}
-            className="w-full sm:w-auto"
-          >
-            <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
         </div>
       </div>
       

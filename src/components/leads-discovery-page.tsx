@@ -294,51 +294,20 @@ export default function LeadsDiscoveryPage() {
         return business as EnrichableBusiness;
       });
 
-      // STEP 4: Set up tracking for the enrichment process
-      console.log(`[DISCOVERY] Setting up tracking for ${businessesToEnrich.length} leads enrichment process`);
-      localStorage.setItem('enrichment_status', 'processing');
-      localStorage.setItem('enrichment_count', businessesToEnrich.length.toString());
-      localStorage.setItem('enrichment_start_time', new Date().toISOString());
-      
-      // STEP 5: Redirect to the enriched leads page with loading state
+      // STEP 4: Redirect to the enriched leads page with loading state
       console.log(`[DISCOVERY] Redirecting to enriched leads page with loading state`);
       router.push(`/leads/enriched?status=processing&count=${businessesToEnrich.length}`);
       
-      // STEP 6: Call the business enrichment service to process leads with AI
-      console.log(`[DISCOVERY] Calling businessService.enrichBusinesses with ${businessesToEnrich.length} leads - this will trigger AI enrichment via the API`);
+      // STEP 5: Call the business enrichment service to process leads with AI
+      console.log(`[DISCOVERY] Calling businessService.enrichBusinesses with ${businessesToEnrich.length} leads`);
       const enrichmentResult = await businessService.enrichBusinesses(businessesToEnrich);
       
-      // STEP 7: Handle the enrichment result
+      // STEP 6: Handle any errors from the enrichment process
       if (enrichmentResult.error) {
         console.error(`[DISCOVERY] Enrichment failed with error:`, enrichmentResult.error);
-        localStorage.setItem('enrichment_status', 'error');
-        localStorage.setItem('enrichment_error', enrichmentResult.error);
-      } else if (enrichmentResult.businesses && enrichmentResult.businesses.length > 0) {
-        console.log(`[DISCOVERY] Enrichment succeeded with ${enrichmentResult.businesses.length} enriched businesses`);
-        
-        // Verify AI data exists in response
-        const hasAiData = enrichmentResult.businesses.some(b => {
-          const enrichedBusiness = b as any; // Cast to any to access enrichment_data
-          return enrichedBusiness.enrichment_data && 
-            (enrichedBusiness.enrichment_data.aiOverview || enrichedBusiness.enrichment_data.leadScore);
-        });
-        
-        if (hasAiData) {
-          console.log('[DISCOVERY] Confirmed AI enrichment data is present in response');
-        } else {
-          console.warn('[DISCOVERY] No AI enrichment data found in response - possible failure in AI processing');
-        }
-        
-        localStorage.setItem('enrichment_status', 'success');
-        localStorage.setItem('enrichment_count', enrichmentResult.businesses.length.toString());
-        localStorage.setItem('enrichment_time', new Date().toISOString());
-      } else {
-        console.warn(`[DISCOVERY] Enrichment completed but no businesses were returned`);
-        localStorage.setItem('enrichment_status', 'warning');
-        localStorage.setItem('enrichment_error', 'No enriched businesses were returned');
       }
       
-      // STEP 8: Clean up
+      // STEP 7: Clean up
       console.log(`[DISCOVERY] Enrichment process complete`);
       setSelectedLeads([]);
       setIsEnrichingLeads(false);

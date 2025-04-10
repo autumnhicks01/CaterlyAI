@@ -57,13 +57,18 @@ export default function CampaignSetupPage() {
         setRadius(profile.service_radius.toString());
       }
       
-      // Extract ideal customer type from profile and auto-select categories
-      if (profile.idealClients) {
+      // Extract ideal client data - check multiple possible locations
+      const idealClientsText = profile.idealClients || 
+                            (profile.user_input_data && profile.user_input_data.idealClients) || 
+                            "wedding venues, on-site catering events, golf courses";
+      
+      if (idealClientsText) {
         // Auto-select categories based on profile information
-        const idealClientsLower = profile.idealClients.toLowerCase();
+        const idealClientsLower = idealClientsText.toLowerCase();
         const detectedCategories: string[] = [];
         
         venueCategories.forEach(category => {
+          // Check if any keyword matches the ideal clients text
           const keywordMatch = category.keywords.some(keyword => 
             idealClientsLower.includes(keyword.toLowerCase())
           );
@@ -77,6 +82,7 @@ export default function CampaignSetupPage() {
           setSelectedCategories(detectedCategories);
           setAutoSelectedCategories(detectedCategories);
           setHasCategorySuggestions(true);
+          console.log("Auto-selected categories:", detectedCategories);
         }
       }
     }
@@ -170,11 +176,6 @@ export default function CampaignSetupPage() {
                     <InfoIcon className="h-4 w-4 text-blue-500" />
                     <AlertDescription className="ml-2">
                       We have your location set to {profile?.location || "[Your Location]"} and a {radius} mile radius from your company profile. Would you like to keep these, or make any changes?
-                      {profile?.user_input_data?.coordinates && (
-                        <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
-                          Coordinates: Lat {profile.user_input_data.coordinates.lat.toFixed(6)}, Lng {profile.user_input_data.coordinates.lng.toFixed(6)}
-                        </div>
-                      )}
                     </AlertDescription>
                   </Alert>
                   
@@ -229,7 +230,10 @@ export default function CampaignSetupPage() {
                   <Alert className="mb-4 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
                     <InfoIcon className="h-4 w-4 text-purple-500" />
                     <AlertDescription className="ml-2">
-                      Based on your customer profile, your ideal clients are {profile?.idealClients || "wedding venues, on-site catering events, golf courses"}. Is there any other category you'd like to target specifically?
+                      Based on your customer profile, your ideal clients are {autoSelectedCategories.map(id => {
+                        const category = venueCategories.find(c => c.id === id);
+                        return category ? category.label.toLowerCase() : '';
+                      }).filter(Boolean).join(', ')}. Is there any other category you'd like to target specifically?
                     </AlertDescription>
                   </Alert>
                   

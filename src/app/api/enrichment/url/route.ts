@@ -24,15 +24,19 @@ const jobStorage = global.jobStorage;
 
 export async function POST(request: Request) {
   try {
-    console.log('[TEST] Starting URL enrichment process...');
+    console.log('[ENRICHMENT] Starting URL enrichment process...');
     
     // Parse the request body
     const reqBody = await request.json();
     const { url } = reqBody;
     
-    // Check for required API key
+    // Check for required API keys
     if (!process.env.FIRECRAWL_API_KEY) {
       return NextResponse.json({ error: 'API configuration error (Firecrawl API key missing)' }, { status: 500 });
+    }
+    
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json({ error: 'API configuration error (OpenAI API key missing)' }, { status: 500 });
     }
     
     // Validate the URL
@@ -42,7 +46,7 @@ export async function POST(request: Request) {
     
     // Create a unique job ID
     const jobId = uuidv4();
-    console.log(`[TEST] Creating new job ${jobId} for URL: ${url}`);
+    console.log(`[ENRICHMENT] Creating new job ${jobId} for URL: ${url}`);
     
     // Store the job in memory
     jobStorage.set(jobId, {
@@ -57,7 +61,7 @@ export async function POST(request: Request) {
     // Return the job ID
     return NextResponse.json({ jobId });
   } catch (error) {
-    console.error('[TEST] Error starting enrichment:', error);
+    console.error('[ENRICHMENT] Error starting enrichment:', error);
     return NextResponse.json(
       { error: 'Failed to start enrichment process' },
       { status: 500 }
@@ -68,7 +72,7 @@ export async function POST(request: Request) {
 // Function to process the URL in the background
 async function startEnrichmentProcess(jobId: string, url: string) {
   try {
-    console.log(`[TEST] Starting enrichment process for job ${jobId}`);
+    console.log(`[ENRICHMENT] Starting enrichment process for job ${jobId}`);
     
     // Update status to extracting
     jobStorage.set(jobId, {
@@ -82,70 +86,97 @@ async function startEnrichmentProcess(jobId: string, url: string) {
     try {
       const apiKey = process.env.FIRECRAWL_API_KEY;
       
-      // Create a detailed prompt for extraction
+      // Create a detailed prompt for extraction that targets the data we need
       const extractPrompt = `
       Extract comprehensive venue information from this website.
       
-      Focus on finding information that would be relevant for a catering business:
+      MOST IMPORTANT: Search thoroughly for email addresses and contact information!
       
-      1. Email addresses (check contact pages, forms, footer)
-      2. Phone numbers
-      3. Physical address
-      4. Venue name
+      Extract the following information about this venue:
+      1. Venue name
+      2. Physical address
+      3. Email addresses (search ALL pages, especially contact forms and footers)
+      4. Phone numbers
       5. Types of events hosted
       6. Venue capacity
       7. In-house catering availability
       8. Venue description
+      9. Amenities
+      10. Preferred caterers list (if any)
       
-      Also, provide a lead score from 0-100 indicating how promising this venue is for a catering company.
+      Also, provide a lead score from 0-100 indicating how promising this venue is for a catering company,
+      with venues allowing external catering scoring higher than venues with mandatory in-house catering.
+      Provide 1-2 sentences explaining your scoring reasoning.
       `;
 
-      console.log(`[TEST] Calling Firecrawl extract API for ${url}`);
+      console.log(`[ENRICHMENT] Calling Firecrawl extract API for ${url}`);
       const extractResponse = await axios.post(
         'https://api.firecrawl.dev/v1/extract',
         { 
           urls: [url],
           prompt: extractPrompt,
-          enableWebSearch: true
+          enableWebSearch: true,
+          wait: 20000
         },
         {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`
           },
-          timeout: 60000 // Increase timeout to 60 seconds
+          timeout: 60000 // Increase timeout to 60 seconds for large sites
         }
       );
       
-      console.log(`[TEST] Extract API response status: ${extractResponse.status}`);
-      console.log(`[TEST] Extract API response data:`, JSON.stringify(extractResponse.data, null, 2));
+      console.log(`[ENRICHMENT] Extract API response status: ${extractResponse.status}`);
+      console.log(`[ENRICHMENT] Extract API response data:`, JSON.stringify(extractResponse.data, null, 2));
       
-      // Check if we got data directly or need to poll for job completion
+      // Check if we got data or if we need to poll
       if (extractResponse.data?.success === true && extractResponse.data.data) {
-        console.log(`[TEST] Extraction successful with direct data`);
+        console.log(`[ENRICHMENT] Extraction successful with direct data`);
         extractedData = extractResponse.data.data;
       } else if (extractResponse.data?.status === "processing" || extractResponse.data?.jobId || extractResponse.data?.job_id) {
-        // Need to poll for completion
-        console.log(`[TEST] Extract API returned processing status, need to poll`);
-        const jobIdFromResponse = extractResponse.data.jobId || extractResponse.data.job_id;
-        if (jobIdFromResponse) {
-          extractedData = await pollExtractionJob(jobIdFromResponse, apiKey!);
+        // Poll for job completion
+        const extractionJobId = extractResponse.data.jobId || extractResponse.data.job_id;
+        console.log(`[ENRICHMENT] Got job ID for polling: ${extractionJobId}`);
+        if (extractionJobId) {
+          extractedData = await pollExtractionJob(extractionJobId, apiKey!);
         } else {
-          console.error(`[TEST] No job ID was returned for polling`);
+          console.error(`[ENRICHMENT] No job ID was returned for polling`);
           throw new Error("Extract API processing but no job ID returned");
         }
       } else {
-        console.error(`[TEST] Extract API failed to return usable data:`, JSON.stringify(extractResponse.data));
+        console.error(`[ENRICHMENT] Extract API failed to return usable data:`, JSON.stringify(extractResponse.data));
         throw new Error("Extract API did not return valid data or a job ID");
       }
       
     } catch (extractError) {
-      console.error(`[TEST] Extraction error:`, extractError);
+      console.error(`[ENRICHMENT] Extraction error:`, extractError);
       throw new Error(`Failed to extract data from URL: ${extractError instanceof Error ? extractError.message : 'Unknown error'}`);
     }
     
-    // Format the final result and add AI overview if needed
-    const finalResult = await formatResult(url, extractedData);
+    // Step 2: Process with OpenAI for overview and scoring if needed
+    let enhancedData = extractedData || {};
+    
+    if (extractedData) {
+      // Add AI overview if missing
+      if (!extractedData.venue_description) {
+        try {
+          const overviewResponse = await generateAIOverview(url, extractedData);
+          enhancedData = {
+            ...enhancedData,
+            venue_description: overviewResponse.venue_description,
+            lead_score: overviewResponse.lead_score || enhancedData.lead_score,
+            lead_score_reasoning: overviewResponse.lead_score_reasoning || enhancedData.lead_score_reasoning
+          };
+        } catch (aiError) {
+          console.error(`[ENRICHMENT] OpenAI processing error:`, aiError);
+          // Continue with what we have from Firecrawl
+        }
+      }
+    }
+    
+    // Format the final result
+    const finalResult = formatResult(url, enhancedData);
     
     // Update job with the result
     jobStorage.set(jobId, {
@@ -154,12 +185,11 @@ async function startEnrichmentProcess(jobId: string, url: string) {
       result: finalResult
     });
     
-    console.log(`[TEST] Job ${jobId} completed successfully`);
+    console.log(`[ENRICHMENT] Job ${jobId} completed successfully`);
     
   } catch (error) {
-    console.error(`[TEST] Error in enrichment process for job ${jobId}:`, error);
+    console.error(`[ENRICHMENT] Error in enrichment process for job ${jobId}:`, error);
     
-    // Update job with the error
     jobStorage.set(jobId, {
       ...jobStorage.get(jobId)!,
       status: 'error',
@@ -169,16 +199,17 @@ async function startEnrichmentProcess(jobId: string, url: string) {
   }
 }
 
-// Helper function to poll for job completion
+// Helper function to poll for extraction job completion
 async function pollExtractionJob(jobId: string, apiKey: string): Promise<any> {
-  console.log(`[TEST] Starting polling for job ${jobId}`);
+  console.log(`[ENRICHMENT] Starting polling for job ${jobId}`);
+  let extractionComplete = false;
   let retries = 0;
-  const maxRetries = 15; // Increase poll time to 3 minutes (15 * 12s)
+  const maxRetries = 15; // Poll for up to ~3 minutes (15 * 12s)
   
-  while (retries < maxRetries) {
+  while (!extractionComplete && retries < maxRetries) {
     retries++;
     try {
-      console.log(`[TEST] Checking status, attempt ${retries}/${maxRetries}`);
+      console.log(`[ENRICHMENT] Checking status for job ${jobId}, attempt ${retries}/${maxRetries}`);
       const statusResponse = await axios.get(
         `https://api.firecrawl.dev/v1/extract/${jobId}`,
         {
@@ -189,20 +220,20 @@ async function pollExtractionJob(jobId: string, apiKey: string): Promise<any> {
         }
       );
       
-      console.log(`[TEST] Poll response status: ${statusResponse.status}`);
-      console.log(`[TEST] Poll response data:`, JSON.stringify(statusResponse.data, null, 2));
+      console.log(`[ENRICHMENT] Poll response status: ${statusResponse.status}`);
+      console.log(`[ENRICHMENT] Poll response data:`, JSON.stringify(statusResponse.data, null, 2));
       
       if (statusResponse.data.status === "completed" && statusResponse.data.data) {
-        console.log(`[TEST] Extraction completed for job ${jobId}`);
+        console.log(`[ENRICHMENT] Extraction completed for job ${jobId}`);
         return statusResponse.data.data;
       } else if (statusResponse.data.status === "failed" || statusResponse.data.status === "error") {
         throw new Error(`Firecrawl extraction job failed: ${statusResponse.data.message || 'Unknown error'}`);
       } else {
-        console.log(`[TEST] Extraction in progress: ${statusResponse.data.status}, retrying in 12s...`);
+        console.log(`[ENRICHMENT] Extraction in progress: ${statusResponse.data.status}, retrying in 12s...`);
         await new Promise(resolve => setTimeout(resolve, 12000));
       }
     } catch (statusError) {
-      console.error(`[TEST] Error checking job status:`, statusError);
+      console.error(`[ENRICHMENT] Error checking job status:`, statusError);
       await new Promise(resolve => setTimeout(resolve, 5000));
     }
   }
@@ -210,14 +241,14 @@ async function pollExtractionJob(jobId: string, apiKey: string): Promise<any> {
   throw new Error(`Extraction timed out after ${maxRetries} retries`);
 }
 
-// Add AI overview and scoring with OpenAI if needed
-async function enhanceWithAI(url: string, extractedData: any): Promise<any> {
+// Generate AI overview and scoring from OpenAI
+async function generateAIOverview(url: string, extractedData: any): Promise<any> {
   try {
-    console.log(`[TEST] Enhancing data with OpenAI for ${url}`);
+    console.log(`[ENRICHMENT] Generating AI overview for ${url}`);
     
     const domain = new URL(url).hostname;
     
-    // Create a prompt for AI analysis
+    // Create a prompt for overview and scoring
     const prompt = `
     Please analyze this venue as a potential catering lead and provide:
     1. A concise description of the venue (2-4 sentences)
@@ -230,7 +261,7 @@ async function enhanceWithAI(url: string, extractedData: any): Promise<any> {
     Extracted Information:
     ${JSON.stringify(extractedData, null, 2)}
     
-    Format your response as a JSON object with these fields:
+    Format your response ONLY as a JSON with these three fields:
     {
       "venue_description": "Your venue description here",
       "lead_score": number (0-100),
@@ -246,7 +277,7 @@ async function enhanceWithAI(url: string, extractedData: any): Promise<any> {
         messages: [
           { 
             role: 'system', 
-            content: 'You are an expert assistant for catering companies evaluating venue websites.'
+            content: 'You are an expert assistant for catering companies evaluating venue websites. FORMAT YOUR RESPONSE ONLY AS JSON.'
           },
           { role: 'user', content: prompt }
         ],
@@ -264,10 +295,10 @@ async function enhanceWithAI(url: string, extractedData: any): Promise<any> {
     
     try {
       const aiResponse = JSON.parse(openaiResponse.data.choices[0].message.content);
-      console.log(`[TEST] Successfully generated AI overview and scoring`);
+      console.log(`[ENRICHMENT] Successfully generated AI overview and scoring`);
       return aiResponse;
     } catch (e) {
-      console.error(`[TEST] Error parsing OpenAI response:`, e);
+      console.error(`[ENRICHMENT] Error parsing OpenAI response:`, e);
       return {
         venue_description: `${extractedData.venue_name || domain} is a venue that may host events.`,
         lead_score: 50,
@@ -275,13 +306,13 @@ async function enhanceWithAI(url: string, extractedData: any): Promise<any> {
       };
     }
   } catch (error) {
-    console.error(`[TEST] Error generating AI overview:`, error);
-    return null;
+    console.error(`[ENRICHMENT] Error generating AI overview:`, error);
+    throw error;
   }
 }
 
 // Format the result for the frontend
-async function formatResult(url: string, extractedData: any): Promise<any> {
+function formatResult(url: string, extractedData: any): any {
   const domain = new URL(url).hostname;
   const defaultResult = {
     url: url,
@@ -292,68 +323,52 @@ async function formatResult(url: string, extractedData: any): Promise<any> {
     aiOverview: "",
     venueCapacity: "",
     inHouseCatering: false,
+    eventManagerName: "",
     eventManagerEmail: "",
     eventManagerPhone: "",
     commonEventTypes: [],
+    amenities: [],
+    preferredCaterers: [],
     leadScore: {
       score: 0,
       potential: "unknown",
       reasons: ["No data extracted"],
       lastCalculated: new Date().toISOString()
     },
-    extracted_data: null, // Add the raw extracted data for debugging
+    extracted_data: extractedData, // Include raw data for debugging
     processed_at: new Date().toISOString()
   };
 
   // If no data was extracted, return default
   if (!extractedData) {
-    console.error(`[TEST] No data was extracted from ${url}`);
+    console.error(`[ENRICHMENT] No data was extracted from ${url}`);
     return defaultResult;
   }
   
-  console.log(`[TEST] Successfully extracted data:`, JSON.stringify(extractedData, null, 2));
-  
-  // Use OpenAI to enhance the data if needed
-  let enhancedData = extractedData;
-  
-  try {
-    if (!extractedData.venue_description || !extractedData.lead_score) {
-      console.log(`[TEST] Enhancing data with OpenAI for ${url}`);
-      
-      // This part remains unchanged - AI enhancement if needed
-      const aiEnhancement = await enhanceWithAI(url, extractedData);
-      if (aiEnhancement) {
-        enhancedData = {
-          ...extractedData,
-          venue_description: aiEnhancement.venue_description || extractedData.venue_description,
-          lead_score: aiEnhancement.lead_score || extractedData.lead_score || 0,
-          lead_score_reasoning: aiEnhancement.lead_score_reasoning || extractedData.lead_score_reasoning
-        };
-      }
-    }
-  } catch (error) {
-    console.error(`[TEST] Error enhancing with AI:`, error);
-    // Continue with what we have
-  }
+  console.log(`[ENRICHMENT] Successfully extracted data:`, JSON.stringify(extractedData, null, 2));
 
   // Map extracted data to our result format
   const result = {
     ...defaultResult,
-    venueName: enhancedData.venue_name || enhancedData.name || "",
-    address: enhancedData.physical_address || enhancedData.address || "",
-    aiOverview: enhancedData.venue_description || enhancedData.description || "",
-    venueCapacity: enhancedData.venue_capacity || enhancedData.capacity || "",
-    inHouseCatering: enhancedData.in_house_catering_availability === "Yes" || false,
-    eventManagerEmail: enhancedData.email || 
-                     (enhancedData.contact_information?.email) || "",
-    eventManagerPhone: enhancedData.phone || 
-                     (enhancedData.contact_information?.phone) || "",
-    commonEventTypes: enhancedData.event_types_hosted || [],
-    extracted_data: enhancedData, // Include the full extracted data for debugging
+    venueName: extractedData.venue_name || extractedData.name || "",
+    address: extractedData.physical_address || extractedData.address || "",
+    aiOverview: extractedData.venue_description || extractedData.description || "",
+    venueCapacity: extractedData.venue_capacity || extractedData.capacity || "",
+    inHouseCatering: extractedData.in_house_catering_availability === "Yes" || extractedData.inHouseCatering === true || false,
+    eventManagerName: extractedData.contact_person || extractedData.contactPersonName || 
+                     (extractedData.contact_information?.contact_person) || "",
+    eventManagerEmail: extractedData.email || 
+                      (extractedData.contact_information?.email) || "",
+    eventManagerPhone: extractedData.phone || 
+                      (extractedData.contact_information?.phone) || "",
+    commonEventTypes: extractedData.event_types_hosted || extractedData.eventTypes || [],
+    amenities: extractedData.amenities_offered || extractedData.amenities || [],
+    preferredCaterers: extractedData.preferred_caterers || extractedData.preferredCaterers || [],
+    extracted_data: extractedData, // Include raw data for debugging
     leadScore: {
-      score: enhancedData.lead_score || 0,
-      potential: getLeadPotential(enhancedData.lead_score),
-      reasons: enhancedData.lead_score_reasoning ? [enhancedData.lead_score_reasoning] : ["No specific reasons provided"],
+      score: extractedData.lead_score || 0,
+      potential: getLeadPotential(extractedData.lead_score),
+      reasons: extractedData.lead_score_reasoning ? [extractedData.lead_score_reasoning] : ["No specific reasons provided"],
       lastCalculated: new Date().toISOString()
     },
     processed_at: new Date().toISOString()
@@ -363,7 +378,7 @@ async function formatResult(url: string, extractedData: any): Promise<any> {
 }
 
 // Helper function to determine lead potential based on score
-function getLeadPotential(score: number | undefined | null): string {
+function getLeadPotential(score: number | undefined | null): 'high' | 'medium' | 'low' | 'unknown' {
   if (score === undefined || score === null) return 'unknown';
   if (score >= 70) return 'high';
   if (score >= 40) return 'medium';
@@ -397,7 +412,7 @@ export async function GET(request: Request) {
       startedAt: job.startedAt
     });
   } catch (error) {
-    console.error('[TEST] Error getting job status:', error);
+    console.error('[ENRICHMENT] Error getting job status:', error);
     return NextResponse.json(
       { error: 'Failed to get job status' },
       { status: 500 }

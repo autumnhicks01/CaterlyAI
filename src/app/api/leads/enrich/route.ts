@@ -78,9 +78,11 @@ async function trackEnrichmentProgress(leads: Lead[], callback?: ProgressCallbac
 /**
  * POST handler for lead enrichment
  * 
- * This endpoint executes the enrichment process for selected leads
+ * @deprecated This endpoint is being replaced by the new streamlined enrichment process
+ * using the lib/enrichment module and API endpoints in /api/enrichment/*
  */
 export async function POST(req: NextRequest) {
+  console.warn('[API:ENRICH] This endpoint is deprecated. Please use the new enrichment implementation.');
   console.log('[API:ENRICH] Lead enrichment API route called');
   
   // Authenticate the user session
