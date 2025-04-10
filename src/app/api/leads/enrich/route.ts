@@ -4,7 +4,7 @@ import { workflowManager } from '@/workflows/workflowManager';
 import { createClient } from '@/utils/supabase/server';
 import type { Database } from '@/types/supabase';
 
-export const maxDuration = 300; // 5 minutes for workflow execution
+export const maxDuration = 900; // 15 minutes for Vercel Pro plan
 
 /**
  * POST handler for lead enrichment

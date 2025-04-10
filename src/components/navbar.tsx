@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { useCaterly } from "../app/context/caterly-context"
+import { useAuth } from "../app/context/auth-context"
 import { ChevronDown } from "lucide-react"
 import {
   DropdownMenu,
@@ -18,13 +19,29 @@ export default function Navbar() {
   const pathname = usePathname()
   const router = useRouter()
   const [showMobileMenu, setShowMobileMenu] = useState(false)
-  const { user } = useCaterly()
+  const { user: caterlyUser, setUser: setCaterlyUser } = useCaterly()
+  const { user: authUser, signOut } = useAuth()
   const [profileId, setProfileId] = useState<string | null>(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+
+  // Check authentication status on component mount and path changes
+  useEffect(() => {
+    // Set authentication status based on authUser from Supabase
+    setIsAuthenticated(!!authUser)
+    
+    // If auth user exists but caterly user doesn't, set it
+    if (authUser && !caterlyUser) {
+      setCaterlyUser({
+        name: authUser.email?.split('@')[0] || 'User',
+        email: authUser.email || '',
+      })
+    }
+  }, [authUser, caterlyUser, setCaterlyUser, pathname])
 
   // Fetch the user's profile ID when the component mounts or path changes
   useEffect(() => {
     const fetchProfileId = async () => {
-      if (!user) return
+      if (!caterlyUser) return
       
       try {
         // Use fetch to get the profile ID since we're in a client component
@@ -43,7 +60,7 @@ export default function Navbar() {
     }
     
     fetchProfileId()
-  }, [user, pathname]) // Re-fetch when path changes to ensure we have the latest ID
+  }, [caterlyUser, pathname]) // Re-fetch when path changes to ensure we have the latest ID
 
   // Don't show navbar on landing page
   if (pathname === "/") return null
@@ -83,21 +100,14 @@ export default function Navbar() {
   // Logout function
   const handleLogout = async () => {
     try {
-      const response = await fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      })
-      
-      if (response.ok) {
-        // Redirect to login page after successful logout
-        router.push('/login')
-      } else {
-        console.error('Logout failed')
-      }
+      // Use the auth context signOut function directly
+      await signOut();
+      // Also clear Caterly context
+      setCaterlyUser(null);
+      // Redirect to login page
+      router.push('/login');
     } catch (error) {
-      console.error('Error during logout:', error)
+      console.error('Error during logout:', error);
     }
   }
 
@@ -121,7 +131,7 @@ export default function Navbar() {
   };
 
   return (
-    <header className="bg-background border-b border-border/40 backdrop-blur-sm sticky top-0 z-10">
+    <header className="bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 backdrop-blur-sm sticky top-0 z-10">
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center">
@@ -135,7 +145,7 @@ export default function Navbar() {
                   strokeWidth="2" 
                   strokeLinecap="round" 
                   strokeLinejoin="round" 
-                  className="w-6 h-6 text-purple-400"
+                  className="w-6 h-6 text-purple-500 dark:text-purple-400"
                 >
                   <circle cx="12" cy="12" r="10" />
                   <path d="M8 14s1.5 2 4 2 4-2 4-2" />
@@ -143,7 +153,7 @@ export default function Navbar() {
                   <line x1="15" y1="9" x2="15" y2="9" />
                 </svg>
               </span>
-              <span className="text-xl font-bold gradient-text">CaterlyAI</span>
+              <span className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-blue-600 dark:from-purple-400 dark:to-blue-400">CaterlyAI</span>
             </Link>
 
             <nav className="ml-10 hidden md:flex space-x-4">
@@ -189,21 +199,17 @@ export default function Navbar() {
           </div>
 
           <div className="flex items-center">
-            {user ? (
-              <div className="flex items-center space-x-3">
+            {isAuthenticated ? (
+              <div className="flex items-center space-x-4">
                 <ThemeToggle />
-                <span className="text-sm text-foreground/80 px-3 py-1 rounded-full bg-secondary/50">
-                  {user.name}
+                <span className="text-sm font-medium">
+                  {caterlyUser?.name || authUser?.email?.split('@')[0] || 'User'}
                 </span>
-                
-                <Link href="/tests/auth" className="text-sm text-purple-500 hover:text-purple-600">
-                  Tests
-                </Link>
                 
                 <Button 
                   variant="outline" 
                   size="sm" 
-                  className="border-purple-500/50 hover:bg-purple-500/10"
+                  className="text-sm font-medium border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800"
                   onClick={handleLogout}
                 >
                   Logout

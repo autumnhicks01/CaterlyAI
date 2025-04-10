@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/utils/supabase/server'
 import { Database } from '@/types/supabase'
+import { cookies } from 'next/headers'
 
 // Define types for the profile data
 interface ProfileData {
@@ -44,6 +45,15 @@ export async function GET(request: NextRequest) {
     // Create a new Supabase client using the helper - now awaited
     const supabase = await createClient()
     
+    // Get all cookies for debugging
+    const cookieStore = await cookies()
+    const allCookies = cookieStore.getAll()
+    const authCookies = allCookies.filter(cookie => 
+      cookie.name.includes('auth') || cookie.name.startsWith('sb-')
+    )
+    
+    console.log('API: Auth cookies found:', authCookies.map(c => c.name).join(', ') || 'none')
+    
     // Get the current session
     const { data: { session }, error: sessionError } = await supabase.auth.getSession()
     
@@ -51,25 +61,53 @@ export async function GET(request: NextRequest) {
       console.error('API: Session error in /profile/current:', sessionError)
       return NextResponse.json({ 
         error: 'Authentication error',
-        details: sessionError
+        details: sessionError,
+        cookies: {
+          count: allCookies.length,
+          authCookies: authCookies.map(c => c.name)
+        }
       }, { status: 401, headers })
     }
     
     if (!session) {
       console.log('API: No session found in /profile/current')
+      
+      // Try to get user directly as a fallback
+      const { data: { user } } = await supabase.auth.getUser()
+      
+      if (user) {
+        console.log('API: User found without session, ID:', user.id)
+        // Continue with profile fetch using the user ID
+      } else {
+        return NextResponse.json({ 
+          authenticated: false,
+          profile: null,
+          cookies: {
+            count: allCookies.length,
+            authCookies: authCookies.map(c => c.name)
+          }
+        }, { status: 401, headers })
+      }
+    }
+    
+    // Use user ID from session or direct user check
+    const userId = session?.user.id || (await supabase.auth.getUser()).data.user?.id
+    
+    if (!userId) {
       return NextResponse.json({ 
         authenticated: false,
-        profile: null
+        profile: null,
+        message: 'No user ID found'
       }, { status: 401, headers })
     }
     
-    console.log('API: Session found for user:', session.user.id)
+    console.log('API: Session found for user:', userId)
     
     // Get the user's profile with all fields we need
     const { data: profile, error: profileError } = await supabase
       .from('user_profiles')
       .select('id, business_name, full_address, delivery_radius, business_type, contact_phone, website_url, user_input_data, created_at, updated_at')
-      .eq('user_id', session.user.id)
+      .eq('user_id', userId)
       .single()
     
     if (profileError) {

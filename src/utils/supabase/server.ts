@@ -8,7 +8,7 @@ export async function createClient() {
   const cookieStore = await cookies()
   
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   
   // Create the client with type safety
   return createServerClient<Database>(
@@ -24,7 +24,7 @@ export async function createClient() {
             name,
             value,
             ...options,
-            path: options?.path || '/'
+            path: '/'
           })
         },
         remove(name, options) {
@@ -32,7 +32,7 @@ export async function createClient() {
             name,
             value: '',
             ...options,
-            path: options?.path || '/',
+            path: '/',
             maxAge: 0
           })
         },

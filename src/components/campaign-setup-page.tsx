@@ -123,26 +123,26 @@ export default function CampaignSetupPage() {
   return (
     <div className="container mx-auto px-4 py-12 relative">
       {/* Background effects */}
-      <div className="absolute -top-20 right-0 w-96 h-96 bg-purple-500/5 rounded-full filter blur-3xl animate-pulse-slow"></div>
-      <div className="absolute bottom-20 -left-20 w-96 h-96 bg-blue-500/5 rounded-full filter blur-3xl animate-pulse-slow animation-delay-700"></div>
+      <div className="absolute -top-20 right-0 w-96 h-96 bg-purple-500/5 dark:bg-purple-500/10 rounded-full filter blur-3xl"></div>
+      <div className="absolute bottom-20 -left-20 w-96 h-96 bg-blue-500/5 dark:bg-blue-500/10 rounded-full filter blur-3xl"></div>
       
       <div className="relative">
-        <h1 className="text-4xl font-bold mb-2 text-center gradient-text">Start Your Lead Engine</h1>
-        <p className="text-center text-gray-800 dark:text-gray-200 mb-8">Configure your campaign to discover targeted leads for your catering business</p>
+        <h1 className="text-4xl font-bold mb-2 text-center bg-clip-text text-transparent bg-gradient-to-r from-purple-600 to-blue-600 dark:from-purple-400 dark:to-blue-400">Start Your Lead Engine</h1>
+        <p className="text-center mb-8">Configure your campaign to discover targeted leads for your catering business</p>
 
         <div className="max-w-4xl mx-auto">
-          <Card className="border border-purple-500/10 bg-card shadow-xl overflow-hidden">
-            <CardHeader className="border-b border-purple-200/20 bg-purple-50/5">
+          <Card className="shadow-lg bg-white dark:bg-gray-950 border border-gray-200 dark:border-gray-800">
+            <CardHeader className="border-b border-gray-100 dark:border-gray-800 bg-gray-50 dark:bg-gray-900">
               <div className="flex items-center space-x-2">
                 <span className="w-3 h-3 rounded-full bg-blue-500 animate-pulse"></span>
-                <CardTitle className="text-gray-900 dark:text-gray-100">Campaign Setup</CardTitle>
+                <CardTitle>Campaign Setup</CardTitle>
               </div>
             </CardHeader>
             <CardContent className="p-6 pt-8">
               <div className="space-y-8">
                 <div>
-                  <h3 className="text-lg font-medium mb-4 flex items-center text-gray-900 dark:text-gray-100">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <h3 className="text-lg font-medium mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                     </svg>
                     Campaign Name
@@ -152,26 +152,26 @@ export default function CampaignSetupPage() {
                     value={campaignName}
                     onChange={(e) => setCampaignName(e.target.value)}
                     placeholder="Summer Wedding Special"
-                    className="bg-white text-gray-800 border-gray-200 focus:border-purple-500/50 placeholder:text-gray-600"
+                    className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700"
                   />
                 </div>
 
                 {/* Confirm Location & Radius */}
                 <div>
-                  <h3 className="text-lg font-medium mb-4 flex items-center text-gray-900 dark:text-gray-100">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <h3 className="text-lg font-medium mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
                     Confirm Location & Radius
                   </h3>
                   
-                  <Alert className="mb-4 bg-blue-500/10 border-blue-500/20 text-gray-800 dark:text-gray-200">
+                  <Alert className="mb-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
                     <InfoIcon className="h-4 w-4 text-blue-500" />
                     <AlertDescription className="ml-2">
                       We have your location set to {profile?.location || "[Your Location]"} and a {radius} mile radius from your company profile. Would you like to keep these, or make any changes?
                       {profile?.user_input_data?.coordinates && (
-                        <div className="mt-2 text-xs text-blue-600">
+                        <div className="mt-2 text-xs text-blue-600 dark:text-blue-400">
                           Coordinates: Lat {profile.user_input_data.coordinates.lat.toFixed(6)}, Lng {profile.user_input_data.coordinates.lng.toFixed(6)}
                         </div>
                       )}
@@ -180,8 +180,8 @@ export default function CampaignSetupPage() {
                   
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div>
-                      <Label htmlFor="location" className="text-gray-900 dark:text-gray-100 flex items-center mb-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <Label htmlFor="location" className="flex items-center mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
@@ -191,19 +191,19 @@ export default function CampaignSetupPage() {
                         id="location"
                         value={profile?.location || ""}
                         disabled
-                        className="bg-gray-100 text-gray-800 border-gray-200 cursor-not-allowed"
+                        className="bg-gray-100 dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400"
                       />
                     </div>
 
                     <div>
-                      <Label htmlFor="radius" className="text-gray-900 dark:text-gray-100 flex items-center mb-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <Label htmlFor="radius" className="flex items-center mb-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mr-2 text-blue-600 dark:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                         </svg>
                         Radius (miles)
                       </Label>
                       <Select value={radius} onValueChange={setRadius}>
-                        <SelectTrigger id="radius" className="bg-white text-gray-800 border-gray-200 focus:border-purple-500/50">
+                        <SelectTrigger id="radius" className="bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700">
                           <SelectValue placeholder="Select radius" />
                         </SelectTrigger>
                         <SelectContent>
@@ -219,14 +219,14 @@ export default function CampaignSetupPage() {
 
                 {/* Lead Category */}
                 <div>
-                  <h3 className="text-lg font-medium mb-4 flex items-center text-gray-900 dark:text-gray-100">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2 text-purple-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <h3 className="text-lg font-medium mb-4 flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="w-5 h-5 mr-2 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                     </svg>
                     Lead Category
                   </h3>
                   
-                  <Alert className="mb-4 bg-purple-500/10 border-purple-500/20 text-gray-800 dark:text-gray-200">
+                  <Alert className="mb-4 bg-purple-50 dark:bg-purple-950/30 border border-purple-200 dark:border-purple-800">
                     <InfoIcon className="h-4 w-4 text-purple-500" />
                     <AlertDescription className="ml-2">
                       Based on your customer profile, your ideal clients are {profile?.idealClients || "wedding venues, on-site catering events, golf courses"}. Is there any other category you'd like to target specifically?
@@ -234,15 +234,15 @@ export default function CampaignSetupPage() {
                   </Alert>
                   
                   <div>
-                    <h4 className="text-base font-medium mb-3 text-gray-900 dark:text-gray-100">Which types of businesses would you like to include in this search? (Select all that apply.)</h4>
+                    <h4 className="text-base font-medium mb-3">Which types of businesses would you like to include in this search? (Select all that apply.)</h4>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       {venueCategories.map((category) => (
                         <div
                           key={category.id}
                           className={`flex items-center space-x-2 p-3 rounded-md border transition-colors ${
                             selectedCategories.includes(category.id)
-                              ? "border-purple-400/30 bg-purple-400/10"
-                              : "border-gray-200/20 bg-white/5"
+                              ? "border-purple-200 dark:border-purple-700 bg-purple-50 dark:bg-purple-900/20"
+                              : "border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900"
                           }`}
                         >
                           <Checkbox

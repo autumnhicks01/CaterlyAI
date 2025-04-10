@@ -51,9 +51,8 @@ export function LoginForm() {
         // Give the browser time to process cookies before redirect
         setTimeout(() => {
           const redirectUrl = searchParams.get('redirect') || '/profile';
-          router.push(redirectUrl);
-          router.refresh(); // Force refresh to update auth state
-        }, 100);
+          window.location.href = redirectUrl;
+        }, 500);
       }
     } catch (error: any) {
       setErrorMessage(error.message || 'An unexpected error occurred');

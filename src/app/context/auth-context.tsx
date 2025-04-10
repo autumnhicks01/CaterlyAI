@@ -12,16 +12,7 @@ const createClient = () => {
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   return createBrowserClient<Database>(
     supabaseUrl, 
-    supabaseKey,
-    {
-      cookieOptions: {
-        name: 'sb-auth-token',
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-        sameSite: 'lax',
-        secure: process.env.NODE_ENV === 'production',
-        path: '/'
-      }
-    }
+    supabaseKey
   )
 }
 
@@ -52,23 +43,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const getInitialSession = async () => {
       setIsLoading(true)
       
-      const { data: { session } } = await supabase.auth.getSession()
-      setSession(session)
-      setUser(session?.user ?? null)
-      
-      setIsLoading(false)
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        console.log('Auth Provider: Initial session check:', !!session)
+        
+        setSession(session)
+        setUser(session?.user ?? null)
+      } catch (error) {
+        console.error('Auth Provider: Error getting initial session:', error)
+      } finally {
+        setIsLoading(false)
+      }
     }
 
     getInitialSession()
 
     // Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
+      (event, session) => {
+        console.log('Auth Provider: Auth state change event:', event)
         setSession(session)
         setUser(session?.user ?? null)
         setIsLoading(false)
       }
     )
+
+    // Check for persisted auth state in localStorage
+    const checkLocalStorage = () => {
+      try {
+        const storedAuth = localStorage.getItem('supabase_auth_state')
+        if (storedAuth) {
+          const authState = JSON.parse(storedAuth)
+          console.log('Auth Provider: Found stored auth state:', authState.hasSession)
+        }
+      } catch (e) {
+        console.error('Auth Provider: Error reading from localStorage', e)
+      }
+    }
+    
+    checkLocalStorage()
 
     // Cleanup subscription on unmount
     return () => subscription.unsubscribe()
@@ -88,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = async (email: string, password: string) => {
     console.log('Attempting signIn with:', { email });
     try {
-      // Sign in with password - removed forced signOut that was clearing cookies
+      // Sign in with password - remove the forced signOut
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password
@@ -98,14 +111,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         success: !error,
         error: error?.message,
         hasUser: !!data.user,
-        hasSession: !!data.session
+        hasSession: !!data.session,
+        sessionExpiresAt: data.session?.expires_at
       });
       
       if (!error) {
         // Update the user state immediately upon successful login
         setUser(data.user);
         setSession(data.session);
-        router.refresh(); // Force router refresh to update server components
+        
+        // Persist session in localStorage as a fallback mechanism
+        if (data.session) {
+          try {
+            localStorage.setItem('supabase_auth_state', JSON.stringify({
+              hasSession: true,
+              timestamp: Date.now()
+            }));
+          } catch (e) {
+            console.error('Failed to store auth state in localStorage:', e);
+          }
+        }
       }
       
       return { data, error };

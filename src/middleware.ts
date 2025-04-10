@@ -11,13 +11,6 @@ export async function middleware(req: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
-        cookieOptions: {
-          name: 'sb-auth-token',
-          maxAge: 60 * 60 * 24 * 7, // 7 days 
-          sameSite: 'lax',
-          secure: process.env.NODE_ENV === 'production',
-          path: '/'
-        },
         cookies: {
           get: (name) => {
             const cookies = req.cookies.getAll();
@@ -30,13 +23,13 @@ export async function middleware(req: NextRequest) {
               name,
               value,
               ...options,
-              path: options.path || '/'
+              path: '/'
             });
           },
           remove: (name, options) => {
             res.cookies.delete({
               name,
-              path: options?.path || '/',
+              path: '/',
               ...options,
             });
           },
@@ -91,6 +84,16 @@ function handleAuthFlow(req: NextRequest, res: NextResponse, isAuthenticated: bo
 // Define which routes this middleware should run on
 export const config = {
   matcher: [
-    '/((?!api|_next/static|_next/image|tests/|login|signup|favicon.ico|.*\\.png$).*)',
+    /*
+     * Match all request paths except for the ones starting with:
+     * - api (API routes)
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     * - public folder
+     * Note that this doesn't exclude /login and /signup from middleware processing
+     * We handle login/signup page redirects explicitly in the handleAuthFlow function
+     */
+    '/((?!api|_next/static|_next/image|_next/data|favicon.ico|.*\\.png$).*)'
   ],
 } 
