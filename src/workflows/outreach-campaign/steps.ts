@@ -287,7 +287,7 @@ export async function startEmailCampaignWorkflow() {
  * Called after user approves the emails in the UI
  */
 export async function launchApprovedCampaigns(
-  approvedTemplates: Record<string, string[]>,
+  approvedEmails: Record<string, string[]>,
   userEmail: string
 ) {
   try {
@@ -303,7 +303,7 @@ export async function launchApprovedCampaigns(
     
     // Execute the launch campaign step with proper context
     const launchContext: StepContext = {
-      triggerData: { approvedTemplates, userEmail },
+      triggerData: { approvedEmails, userEmail },
       getStepResult: (stepId: string) => {
         if (stepId === 'fetch-leads') return fetchResult;
         return null;

@@ -113,7 +113,7 @@ function validateProfile(profile: any) {
 
 /**
  * API route to start the outreach campaign workflow
- * This initiates the process of generating email templates
+ * This initiates the process of generating campaign emails
  */
 export async function POST(request: NextRequest) {
   try {
@@ -143,14 +143,18 @@ export async function POST(request: NextRequest) {
 
     // Parse request body
     const body = await request.json();
-    const { category, leads, profile } = body;
+    const { category, leads, profile, useStreaming, currentDate, templateCount, weekSpan, forceRefresh, hasLeads } = body;
 
     // Detailed request logging
     console.log("Received request with:", {
       hasCategory: !!category,
-      hasLeads: !!leads,
+      hasLeads: hasLeads || !!leads?.length,
       hasProfile: !!profile,
-      profileFields: profile ? Object.keys(profile) : 'none'
+      useStreaming: !!useStreaming,
+      currentDate: currentDate || 'not provided',
+      templateCount: templateCount || 'default (8)',
+      weekSpan: weekSpan || 'default (12)',
+      leadsCount: leads?.length || 0,
     });
 
     // Validate required parameters
@@ -189,67 +193,59 @@ export async function POST(request: NextRequest) {
     console.log(`Processing outreach for category: ${category}`);
     console.log(`Leads provided: ${leads ? leads.length : 0}`);
     
-    // We'll generate templates regardless of whether leads are provided
-    console.log(`Generating templates for category: ${category}`);
+    // We'll generate campaign emails regardless of whether leads are provided
+    console.log(`Generating campaign emails for category: ${category}`);
     
-    let templates = [];
+    let emails = [];
     
-    // Generate templates using only one method
     try {
-      // Generate templates using the optimized agent with caching
-      templates = await generateDripCampaign(category, profile);
-      console.log(`Generated ${templates.length} templates for category ${category}`);
+      // Generate the campaign emails
+      emails = await generateDripCampaign(category, profile, {
+        useStreaming,
+        currentDate,
+        templateCount,
+        weekSpan,
+        leads
+      });
+      
+      console.log(`Successfully generated ${emails.length} campaign emails for ${category}`);
+
+      // Return the generated emails
+      return NextResponse.json({
+        success: true,
+        data: {
+          emailTemplates: {
+            [category]: emails
+          }
+        }
+      });
     } catch (error: any) {
-      console.error('Error generating templates:', error);
+      console.error(`Error generating campaign emails: ${error.message}`, error);
       
-      // Detailed error logging
-      const errorDetails = {
-        status: error.status || 'unknown',
-        message: error.message || 'Unknown error',
-        name: error.name || 'Error'
-      };
-      
-      console.error('Detailed error information:', JSON.stringify(errorDetails, null, 2));
-      
-      // Check if this is a rate limit or quota error
-      if (error.status === 429 || (error.message && error.message.includes('429'))) {
-        console.log('OpenAI API rate limit exceeded.');
+      // Handle OpenAI rate limiting or quota errors
+      if (error.message?.includes('Rate limit') || error.message?.includes('429')) {
         return NextResponse.json(
+          { error: `Rate limited by AI provider: ${error.message}` },
           { 
-            error: 'OpenAI API rate limit exceeded. Please try again later.', 
-            details: errorDetails
-          },
+            status: 429,
+            headers: { 'Retry-After': '30' } 
+          }
+        );
+      }
+      
+      if (error.message?.includes('quota')) {
+        return NextResponse.json(
+          { error: `AI provider quota exceeded: ${error.message}` },
           { status: 429 }
         );
       }
       
-      // For other errors
+      // Return error response
       return NextResponse.json(
-        { 
-          error: `Failed to generate email templates: ${error.message || 'Unknown error'}`,
-          details: errorDetails
-        },
+        { error: `Failed to generate campaign emails: ${error.message}` },
         { status: 500 }
       );
     }
-
-    // Return a consistent response format
-    return NextResponse.json({
-      success: true,
-      templates: {
-        templates: templates, // Format expected by test-outreach page
-        stats: {
-          totalTemplates: templates.length,
-        }
-      },
-      data: {
-        // Include the template data in the expected format for the campaign launch page
-        emailTemplates: {
-          [category]: templates
-        }
-      }
-    });
-
   } catch (error: any) {
     // Handle general errors
     console.error("Unhandled error in outreach start API:", error);

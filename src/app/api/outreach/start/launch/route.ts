@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
  * API route to launch approved email campaigns
  * Expected request body:
  * {
- *   approvedTemplates: {
+ *   approvedEmails: {
  *     [category1]: string[],
  *     [category2]: string[],
  *     ...
@@ -46,62 +46,78 @@ export async function POST(request: NextRequest) {
     
     // Parse the request body
     const body = await request.json();
-    const { approvedTemplates, leads } = body;
+    const { approvedEmails, leads } = body;
 
-    // Validate approvedTemplates exist
-    if (!approvedTemplates || Object.keys(approvedTemplates).length === 0) {
+    // Validate approvedEmails exist
+    if (!approvedEmails || Object.keys(approvedEmails).length === 0) {
       return NextResponse.json(
-        { success: false, error: "No approved templates provided" },
+        { success: false, error: "No approved campaign emails provided" },
         { status: 400 }
       );
     }
 
-    // Check that at least one category has templates
-    const categories = Object.keys(approvedTemplates);
+    // Check that at least one category has emails
+    const categories = Object.keys(approvedEmails);
     if (categories.length === 0) {
       return NextResponse.json(
-        { success: false, error: "No categories with templates found" },
+        { success: false, error: "No campaign categories found" },
         { status: 400 }
       );
     }
 
-    console.log(`Processing ${categories.length} categories for campaign launch`);
+    // Ensure at least one category has at least one email
+    const hasCampaignEmails = categories.some(category => 
+      Array.isArray(approvedEmails[category]) && approvedEmails[category].length > 0
+    );
     
-    // Collect stats about each category
-    const categoryStats = categories.map(category => {
-      const templateCount = approvedTemplates[category]?.length || 0;
-      const leadCount = leads?.[category]?.length || 0;
-      
-      return {
-        category,
-        templateCount,
-        leadCount
-      };
-    });
-    
-    // Log category stats
-    categoryStats.forEach(stat => {
-      console.log(`Category: ${stat.category}, Templates: ${stat.templateCount}, Leads: ${stat.leadCount}`);
-    });
+    if (!hasCampaignEmails) {
+      return NextResponse.json(
+        { success: false, error: "No campaign emails found in any category" },
+        { status: 400 }
+      );
+    }
 
-    // TODO: Implement the actual email sending
-    // This would call the real implementation of launchApprovedCampaigns
-    // const result = await launchApprovedCampaigns(approvedTemplates, leads);
+    // Ensure all leads include a valid email
+    if (!leads || leads.length === 0) {
+      return NextResponse.json(
+        { success: false, error: "No leads provided for the campaign" },
+        { status: 400 }
+      );
+    }
+
+    // Convert to structure expected by workflow
+    const leadsForWorkflow = (typeof leads === 'object' && !Array.isArray(leads))
+      ? leads // Already in category format
+      : { all: leads }; // Use a generic 'all' category for flat lead arrays
+
+    try {
+      // Launch the campaign using the workflow runner
+      const result = await launchApprovedCampaigns(
+        // Convert approvedEmails to match expected format
+        approvedEmails,
+        user?.email || 'test@example.com'
+      );
+      
+      return NextResponse.json(result);
+    } catch (error: any) {
+      console.error('Error launching campaign:', error);
+      
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: `Error launching campaign: ${error.message || 'Unknown error'}` 
+        },
+        { status: 500 }
+      );
+    }
+  } catch (error: any) {
+    console.error('Unhandled error in outreach/launch API:', error);
     
-    // For now, we'll just return success
-    return NextResponse.json({
-      success: true,
-      message: "Campaign scheduled successfully",
-      stats: {
-        totalCategories: categories.length,
-        totalLeads: Object.values(leads || {}).flat().length,
-        categories: categoryStats
-      }
-    });
-  } catch (error) {
-    console.error("Error launching campaign:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to launch campaign" },
+      { 
+        success: false, 
+        error: `An unexpected error occurred: ${error.message || 'Unknown error'}` 
+      },
       { status: 500 }
     );
   }

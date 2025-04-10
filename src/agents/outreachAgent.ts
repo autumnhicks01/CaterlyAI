@@ -5,16 +5,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-// Simple in-memory cache for development
-export const templateCache: Record<string, {
-  templates: string[];
-  timestamp: number;
-  category: string;
-}> = {};
-
-// Cache TTL - 6 hours in milliseconds
-const CACHE_TTL = 6 * 60 * 60 * 1000;
-
 // Types for profile data
 interface CateringProfile {
   companyName?: string;
@@ -30,9 +20,8 @@ interface CateringProfile {
 }
 
 // Helper function to get current season and upcoming holidays
-function getSeasonalContext(): { season: string; upcomingHolidays: string[] } {
-  const now = new Date();
-  const month = now.getMonth();
+function getSeasonalContext(date: Date = new Date()): { season: string; upcomingHolidays: string[] } {
+  const month = date.getMonth();
   
   // Determine season
   let season: string;
@@ -81,72 +70,73 @@ function getSeasonalContext(): { season: string; upcomingHolidays: string[] } {
 }
 
 /**
- * Check cache for existing templates or generate new ones
+ * Generate fresh campaign emails - no caching
  * @param category The business category to target
  * @param profile The catering company profile for personalization
+ * @param options Additional options for customizing the campaign email generation
  */
 export async function generateDripCampaign(
   category: string, 
-  profile?: CateringProfile
+  profile?: CateringProfile,
+  options?: {
+    useStreaming?: boolean;
+    currentDate?: string;
+    templateCount?: number;
+    weekSpan?: number;
+    forceRefresh?: boolean;
+    leads?: any[];
+  }
 ): Promise<string[]> {
-  // Normalize category for consistent caching
+  // Normalize category for consistent processing
   const normalizedCategory = category.toLowerCase().trim();
   
-  // Generate a cache key based on category and profile
-  const cacheKey = generateCacheKey(normalizedCategory, profile);
-  
-  // Check if we have cached templates that are still valid
-  if (templateCache[cacheKey] && 
-      Date.now() - templateCache[cacheKey].timestamp < CACHE_TTL) {
-    console.log(`Using cached templates for ${normalizedCategory}`);
-    return templateCache[cacheKey].templates;
-  }
+  // Default options
+  const templateCount = options?.templateCount || 8;
+  const weekSpan = options?.weekSpan || 12;
+  const useStreaming = options?.useStreaming || false;
+  const hasLeads = options?.leads && options.leads.length > 0;
+  const currentDate = options?.currentDate ? new Date(options.currentDate) : new Date();
   
   try {
-    console.log(`Generating fresh templates for ${normalizedCategory}`);
+    console.log(`Generating fresh campaign emails for ${normalizedCategory} with date: ${currentDate.toLocaleDateString()}`);
+    console.log(`Has leads: ${hasLeads ? 'Yes' : 'No'}, Lead count: ${options?.leads?.length || 0}`);
     
     // Get seasonal context for email personalization
-    const { season, upcomingHolidays } = getSeasonalContext();
+    const { season, upcomingHolidays } = getSeasonalContext(currentDate);
     console.log(`Generating campaign for ${normalizedCategory} in ${season} with holidays: ${upcomingHolidays.join(', ')}`);
     
     // Use faster integrated approach
-    const templates = await generateBatchedTemplates(normalizedCategory, season, upcomingHolidays, profile);
+    const campaignEmails = await generateBatchedEmails(
+      normalizedCategory, 
+      season, 
+      upcomingHolidays, 
+      profile,
+      templateCount,
+      weekSpan,
+      useStreaming,
+      options?.leads || []
+    );
     
-    // Cache the results
-    templateCache[cacheKey] = {
-      templates,
-      timestamp: Date.now(),
-      category: normalizedCategory
-    };
-    
-    return templates;
+    console.log(`Successfully generated ${campaignEmails.length} campaign emails for ${normalizedCategory}`);
+    return campaignEmails;
   } catch (error) {
-    console.error("Error generating drip campaign:", error);
+    console.error(`Error generating campaign emails for ${normalizedCategory}:`, error);
     throw error;
   }
 }
 
 /**
- * Generate a cache key based on category and profile
+ * Generate emails with a single API call for better performance
  */
-function generateCacheKey(category: string, profile?: CateringProfile): string {
-  if (!profile) return `category:${category}`;
-  
-  // Include key profile attributes in the cache key
-  const profileKey = `${profile.companyName || ''}|${profile.specialties?.join(',') || ''}`;
-  const hash = Buffer.from(profileKey).toString('base64').substring(0, 10);
-  
-  return `category:${category}:profile:${hash}`;
-}
-
-/**
- * Generate templates with a single API call for better performance
- */
-async function generateBatchedTemplates(
+async function generateBatchedEmails(
   category: string,
   season: string,
   upcomingHolidays: string[],
-  profile?: CateringProfile
+  profile?: CateringProfile,
+  templateCount: number = 8,
+  weekSpan: number = 12,
+  useStreaming: boolean = false,
+  leads: any[] = []
 ): Promise<string[]> {
   // Format profile information for the prompt
   const companyName = profile?.companyName || "Your Catering Company";
@@ -155,6 +145,19 @@ async function generateBatchedTemplates(
   const managerContact = profile?.managerContact || "[Contact Information]";
   const orderingLink = profile?.orderingLink || "[Ordering Link]";
   const specialties = profile?.specialties?.join(", ") || "custom menu design, dietary accommodations";
+  
+  // Lead information for personalization, if available
+  let leadInfo = "";
+  if (leads && leads.length > 0) {
+    leadInfo = `
+    LEAD INFORMATION (Use this to make emails more relevant):
+    - You are targeting ${leads.length} leads in the ${category} category
+    - Example venue: ${leads[0].name || ""}
+    - Type of venue: ${leads[0].type || category}
+    - Location: ${leads[0].location || "local area"}
+    ${leads[0].description ? `- About the venue: ${leads[0].description.substring(0, 200)}...` : ""}
+    `;
+  }
   
   // Enhanced unified prompt combining generation and polish in one step
   const systemPrompt = `
@@ -173,8 +176,10 @@ async function generateBatchedTemplates(
     Ordering Link: ${orderingLink}
     Specialties: ${specialties}
     
+    ${leadInfo}
+    
     YOUR TASK:
-    Create 8 complete email templates for a 12-week drip campaign targeting ${category} clients. These emails should build on each other in a logical sequence that nurtures leads from introduction to booking.
+    Create ${templateCount} complete email templates for a ${weekSpan}-week drip campaign targeting ${category} clients. These emails should build on each other in a logical sequence that nurtures leads from introduction to booking.
     
     FOR EACH EMAIL:
     1. Each email MUST have a UNIQUE subject line (under 60 characters)
@@ -228,65 +233,99 @@ async function generateBatchedTemplates(
     console.log('Starting email template generation (single-pass)...');
     
     // Single API call for complete template generation
-    const response = await openai.chat.completions.create({
-      model: "gpt-4-turbo", 
-      messages: [
-        { role: "system", content: systemPrompt },
-        {
-          role: "user",
-          content: `Please create 8 optimized email templates for ${companyName}'s drip campaign targeting ${category} venues and event planners. 
-          Each email should follow the sequence structure provided, building a cohesive journey from introduction to partnership. 
-          Focus on venue benefits, not just end-client benefits.
-          
-          IMPORTANT REMINDERS:
-          1. Every email must have a UNIQUE subject line with NO REPEATING ACTION WORDS
-          2. DO NOT use the word "elevate" in any subject line
-          3. DO NOT use [Lead Name] or other personalization placeholders
-          4. Each email must have exactly one specific call-to-action
-          5. Include strong sequence transitions to show these are part of an ongoing conversation
-          6. Make these emails sound natural and conversational, not like AI-generated content
-          
-          Please create all 8 emails now, formatted clearly with "Email #1", "Email #2", etc.`
-        },
-      ],
-      max_tokens: 4000,
-      temperature: 0.6, // Balanced temperature for quality and creativity
-    });
+    if (useStreaming) {
+      // Handle streaming response
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4-turbo", 
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Please create ${templateCount} optimized email templates for ${companyName}'s drip campaign targeting ${category} venues and event planners. 
+            Each email should follow the sequence structure provided, building a cohesive journey from introduction to partnership. 
+            Focus on venue benefits, not just end-client benefits.
+            
+            IMPORTANT REMINDERS:
+            1. Every email must have a UNIQUE subject line with NO REPEATING ACTION WORDS
+            2. DO NOT use the word "elevate" in any subject line
+            3. DO NOT use [Lead Name] or other personalization placeholders
+            4. Each email must have exactly one specific call-to-action
+            5. Include strong sequence transitions to show these are part of an ongoing conversation
+            6. Make these emails sound natural and conversational, not like AI-generated content
+            
+            Please create all ${templateCount} emails now, formatted clearly with "Email #1", "Email #2", etc.`
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+        stream: true,
+      });
 
-    console.log('Email template generation completed successfully');
-    let emailTemplates = splitIntoEmails(response.choices[0]?.message?.content || "");
-    
-    // Error handling for insufficient templates
-    if (emailTemplates.length < 8) {
-      console.warn(`Only generated ${emailTemplates.length} templates, expected 8. Adding placeholder prompts.`);
-      while (emailTemplates.length < 8) {
-        emailTemplates.push(`Subject: Email ${emailTemplates.length + 1}\n\nGeneration incomplete. Please regenerate this template.`);
+      // Collect chunks from stream
+      let fullContent = '';
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        fullContent += content;
       }
+      
+      // Process the full content
+      const emailTemplates = splitIntoEmails(fullContent);
+      
+      // Error handling for insufficient templates
+      if (emailTemplates.length < templateCount) {
+        console.warn(`Only generated ${emailTemplates.length} templates, expected ${templateCount}. Adding placeholder prompts.`);
+        while (emailTemplates.length < templateCount) {
+          emailTemplates.push(`Subject: Email ${emailTemplates.length + 1}\n\nGeneration incomplete. Please regenerate this template.`);
+        }
+      }
+      
+      return emailTemplates;
+    } else {
+      // Non-streaming approach
+      const response = await openai.chat.completions.create({
+        model: "gpt-4-turbo", 
+        messages: [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: `Please create ${templateCount} optimized email templates for ${companyName}'s drip campaign targeting ${category} venues and event planners. 
+            Each email should follow the sequence structure provided, building a cohesive journey from introduction to partnership. 
+            Focus on venue benefits, not just end-client benefits.
+            
+            IMPORTANT REMINDERS:
+            1. Every email must have a UNIQUE subject line with NO REPEATING ACTION WORDS
+            2. DO NOT use the word "elevate" in any subject line
+            3. DO NOT use [Lead Name] or other personalization placeholders
+            4. Each email must have exactly one specific call-to-action
+            5. Include strong sequence transitions to show these are part of an ongoing conversation
+            6. Make these emails sound natural and conversational, not like AI-generated content
+            
+            Please create all ${templateCount} emails now, formatted clearly with "Email #1", "Email #2", etc.`
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 4000,
+      });
+      
+      console.log('Email templates generated successfully');
+      const fullContent = response.choices[0].message.content || '';
+      
+      // Process full content into separate emails
+      const emailTemplates = splitIntoEmails(fullContent);
+      
+      // Error handling for insufficient templates
+      if (emailTemplates.length < templateCount) {
+        console.warn(`Only generated ${emailTemplates.length} templates, expected ${templateCount}. Adding placeholder prompts.`);
+        while (emailTemplates.length < templateCount) {
+          emailTemplates.push(`Subject: Email ${emailTemplates.length + 1}\n\nGeneration incomplete. Please regenerate this template.`);
+        }
+      }
+      
+      return emailTemplates;
     }
-    
-    return emailTemplates;
-  } catch (error: any) {
-    console.error("Error in template generation:", error);
-    
-    // Capture detailed error information
-    const errorDetails = {
-      status: error.status,
-      errorType: error.name,
-      message: error.message,
-      details: error.response?.data || 'No additional details'
-    };
-    
-    console.error('Detailed error information:', JSON.stringify(errorDetails, null, 2));
-    
-    // Enhanced error with additional context
-    const enhancedError = new Error(
-      `Template generation failed: ${error.message}. Status: ${error.status || 'unknown'}`
-    );
-    
-    // Include original error properties
-    Object.assign(enhancedError, errorDetails);
-    
-    throw enhancedError;
+  } catch (error) {
+    console.error('Error in template generation:', error);
+    throw error;
   }
 }
 

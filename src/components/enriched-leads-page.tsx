@@ -655,52 +655,43 @@ export default function EnrichedLeadsPage() {
     return url.slice(0, maxLength) + '...';
   };
 
-  // Add a function to launch the AI campaign with selected leads
+  // Update the launchAICampaign function to auto-generate campaign emails
   const launchAICampaign = async () => {
     try {
-      setIsLaunchingCampaign(true);
-      showStatus("Creating AI campaign...");
-      
-      // Get selected leads
-      if (!selectedLeads.length) {
-        showStatus("Please select at least one lead", true);
+      if (selectedLeads.length === 0 && !leads.some(lead => lead.enrichment_data)) {
+        console.error("No leads selected or enriched");
+        showStatus("Please select at least one lead or enrich some leads first.", true);
         return;
       }
       
-      // Get full data for selected leads
-      const selectedLeadsData = leads.filter(lead => selectedLeads.includes(lead.id));
+      setIsLaunchingCampaign(true);
       
-      // Organize leads by category
-      const leadsByCategory: { [key: string]: Lead[] } = {};
+      // Get IDs of selected leads, or use all enriched leads if none selected
+      const selectedLeadIds = selectedLeads.length > 0 ? 
+        selectedLeads : 
+        leads.filter(l => l.enrichment_data).map(l => l.id);
       
-      for (const lead of selectedLeadsData) {
-        // Get the category for outreach
-        let outreachCategory = mapToOutreachCategory(lead.category || "");
-        
-        // Initialize category array if needed
-        if (!leadsByCategory[outreachCategory]) {
-          leadsByCategory[outreachCategory] = [];
-        }
-        
-        leadsByCategory[outreachCategory].push(lead);
-      }
+      // Get primary category from selected leads
+      const primaryCategory = leads.find(l => selectedLeads.includes(l.id))?.category?.toLowerCase() || 'wedding';
       
-      // Create a campaign object with the leads grouped by category
-      const campaignData = {
-        name: `AI Campaign - ${new Date().toLocaleDateString()}`,
-        eventType: Object.keys(leadsByCategory)[0] || "corporate", // Default to first category
-        targetCategories: Object.keys(leadsByCategory),
+      // Store minimal required context
+      setCampaign({
+        name: `Campaign-${new Date().toISOString().split('T')[0]}`,
+        eventType: primaryCategory,
         location: "",
-        radius: 50,
-      };
+        radius: 50
+      });
       
-      // Format the leads for the campaign context
-      const formattedLeadsData = selectedLeadsData.map(lead => ({
-        id: typeof lead.id === 'string' ? parseInt(lead.id, 10) : lead.id,
+      // Prepare filtered leads for context
+      const filteredLeads = leads.filter(lead => 
+        selectedLeads.includes(lead.id) || 
+        (selectedLeads.length === 0 && lead.enrichment_data)
+      ).map(lead => ({
+        id: Number(lead.id), // Convert to number for context Lead type
         name: lead.name || "",
-        company: lead.name || "",
+        company: lead.name || "", // Use name as company for compatibility
         location: lead.address || "",
-        category: mapToOutreachCategory(lead.category || ""),
+        category: lead.category?.toLowerCase() || "wedding",
         description: lead.enrichment_data?.aiOverview || "",
         website: lead.website_url || lead.enrichment_data?.website || "",
         contact: {
@@ -709,140 +700,56 @@ export default function EnrichedLeadsPage() {
         }
       }));
       
-      // Get profile first
-      console.log("Fetching user profile for campaign...");
-      let profileData: any = null;
+      setEnrichedLeads(filteredLeads);
       
-      try {
-        // Fetch the profile for the current user
-        const profileResponse = await fetch('/api/profile/current');
-        
-        if (profileResponse.ok) {
-          const profileDataResult = await profileResponse.json();
-          const profileSource = profileDataResult.profile || profileDataResult;
-          const userInputData = profileSource.user_input_data || {};
-          
-          // Normalize fields to match the expected Profile structure
-          profileData = {
-            companyName: profileSource.business_name || profileSource.companyName || userInputData.businessName || "",
-            menuLink: profileSource.menuLink || profileSource.website_url || userInputData.website || "",
-            managerContact: profileSource.managerContact || userInputData.managerContact || userInputData.ownerContact || "",
-            orderingLink: profileSource.orderingLink || profileSource.website_url || "",
-            focus: profileSource.focus || userInputData.cuisineSpecialties || userInputData.serviceTypes || "",
-            description: profileSource.description || userInputData.uniqueSellingPoints || "",
-            idealClients: profileSource.idealClients || userInputData.idealClients || "",
-            location: profileSource.full_address || profileSource.location || "",
-            photos: [], // Required by Profile type, but not needed for API
-          };
-        } else {
-          throw new Error(`Failed to fetch profile: ${profileResponse.status}`);
-        }
-      } catch (error) {
-        console.error("Error getting user profile:", error);
-        
-        // Fallback to empty profile with required fields
-        profileData = {
-          companyName: "", 
-          menuLink: "",
-          managerContact: "",
-          orderingLink: "",
-          focus: "",
-          description: "", 
-          idealClients: "",
-          location: "",
-          photos: [], // Required by Profile type, but not needed for API
-        };
-        
-        showStatus("Warning: Using default profile data", true);
+      // Fetch profile just to ensure it's available
+      const profileData = await fetch('/api/profile/current').then(res => res.json());
+      if (profileData && profileData.profile) {
+        setProfile(profileData.profile);
       }
       
-      // Store campaign data in context
-      setCampaign(campaignData);
-      setEnrichedLeads(formattedLeadsData);
-      setProfile(profileData);
+      // Start generating emails right away before redirect
+      const formattedProfile = {
+        companyName: profileData?.profile?.business_name || "Your Catering Company",
+        description: profileData?.profile?.description || profileData?.profile?.user_input_data?.description || "Premium catering services",
+        menuLink: profileData?.profile?.website_url || "",
+        managerContact: profileData?.profile?.contact_phone || "",
+        orderingLink: profileData?.profile?.website_url || "",
+        focus: profileData?.profile?.business_type || "catering",
+        idealClients: primaryCategory || "wedding",
+        specialties: [],
+        photos: []
+      };
       
-      // Pre-generate templates for all categories before navigating
-      const categories = Object.keys(leadsByCategory);
-      console.log(`Pre-generating templates for ${categories.length} categories: ${categories.join(', ')}`);
+      // Pre-generate emails for the primary category
+      console.log(`Pre-generating campaign emails for ${primaryCategory} before redirect`);
       
-      // Initialize template store in memory
-      const templatesByCategory: Record<string, any[]> = {};
-      let successCount = 0;
+      // Make API call to start generating emails in the background
+      fetch('/api/outreach/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          profile: formattedProfile,
+          category: primaryCategory,
+          useStreaming: true,
+          currentDate: new Date().toISOString(),
+          templateCount: 8,
+          weekSpan: 12,
+          campaignId: `Campaign-${new Date().toISOString().split('T')[0]}`,
+          leads: filteredLeads,
+          hasLeads: true,
+          autoGenerateOnLoad: true // Signal to auto-generate
+        }),
+      });
       
-      // Generate templates for each category in parallel
-      await Promise.all(
-        categories.map(async (category) => {
-          try {
-            showStatus(`Generating templates for ${category}...`);
-            
-            // Get leads for this category
-            const categoryLeads = formattedLeadsData.filter(lead => 
-              lead.category.toLowerCase() === category.toLowerCase()
-            );
-            
-            // Create request payload
-            const payload = {
-              category,
-              leads: categoryLeads,
-              profile: profileData,
-              requestId: `${category}-${Date.now()}`
-            };
-            
-            // Make API call
-            const response = await fetch('/api/outreach/start', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-csrf-protection': '1',
-                'x-request-id': payload.requestId
-              },
-              credentials: 'include',
-              body: JSON.stringify(payload)
-            });
-            
-            if (!response.ok) {
-              throw new Error(`Failed to generate templates for ${category}: ${response.status}`);
-            }
-            
-            const data = await response.json();
-            
-            // Process templates
-            if (data.success) {
-              let templates: string[] = [];
-              
-              // Handle different response formats
-              if (data.templates?.templates) {
-                templates = data.templates.templates;
-              } else if (data.data?.emailTemplates?.[category]) {
-                templates = data.data.emailTemplates[category];
-              } else if (Array.isArray(data.templates)) {
-                templates = data.templates;
-              }
-              
-              if (templates.length > 0) {
-                templatesByCategory[category] = templates;
-                successCount++;
-                showStatus(`Generated ${templates.length} templates for ${category}`);
-              }
-            }
-          } catch (error) {
-            console.error(`Error generating templates for ${category}:`, error);
-            showStatus(`Failed to generate templates for ${category}`, true);
-          }
-        })
-      );
-      
-      // After template generation, navigate to campaign page
-      console.log("Template generation complete. Navigating to campaign page.");
-      showStatus(`Successfully created campaign with ${formattedLeadsData.length} leads across ${successCount} categories.`);
-      
-      // Navigate to the campaign launch page
-      router.push('/campaign/launch');
+      // Redirect to campaign launch with initializing flag and auto-generate flag
+      router.push(`/campaign/launch?initializing=true&leads=${selectedLeadIds.join(',')}&autoGenerate=true`);
       
     } catch (error) {
-      console.error("Error launching AI campaign:", error);
-      showStatus("Failed to launch AI campaign. Please try again.", true);
-    } finally {
+      console.error("Error launching campaign:", error);
+      showStatus("Error launching campaign", true);
       setIsLaunchingCampaign(false);
     }
   };
