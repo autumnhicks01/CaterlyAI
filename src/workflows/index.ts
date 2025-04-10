@@ -19,18 +19,24 @@ export type {
   EnhancedBusinessResult 
 } from './business-search/schemas';
 
-// Lead Enrichment Workflow
+// Import the workflow
+import leadEnrichmentWorkflow from './lead-enrichment';
+
+// Use the client-side implementation from enrichmentAgent
+import { enrichLeads } from '@/agents/enrichmentAgent';
+
+// Export the workflow and the enrichLeads function
 export { 
-  default as leadEnrichmentWorkflow,
+  leadEnrichmentWorkflow,
   enrichLeads
-} from './lead-enrichment';
+};
 
 // Lead enrichment input interface
 export type { LeadEnrichmentInput } from './lead-enrichment/schemas';
 
-// Export all workflows for default
-import leadEnrichmentWorkflow from './lead-enrichment';
-
-export default {
+// Export workflows object as default
+const workflows = {
   'lead-enrichment': leadEnrichmentWorkflow
-}; 
+};
+
+export default workflows; 

@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "test:workflows": "tsx tests/workflows/index.ts",
-    "patch": "node patch-mastra-core.js"
+    "patch": "node patch-mastra-core.js",
+    "test:url-enrichment": "next dev -p 3334 --turbo"
   },
   "dependencies": {
     "@ai-sdk/openai": "^1.3.6",
@@ -44,6 +45,7 @@
     "@supabase/auth-helpers-nextjs": "^0.10.0",
     "@supabase/ssr": "^0.6.1",
     "@supabase/supabase-js": "^2.49.4",
+    "@types/uuid": "^10.0.0",
     "ai": "^4.2.10",
     "axios": "^1.8.4",
     "class-variance-authority": "^0.7.1",
@@ -71,6 +73,7 @@
     "tailwind-merge": "^2.6.0",
     "toast": "^0.5.4",
     "together-ai": "^0.13.0",
+    "uuid": "^11.1.0",
     "vaul": "^0.9.6",
     "zod": "^3.24.2"
   },

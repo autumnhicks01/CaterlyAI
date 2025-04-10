@@ -237,19 +237,17 @@ export default function LeadsDiscoveryPage() {
     setIsEnrichingLeads(true);
     
     try {
+      // STEP 1: Get the selected businesses
+      console.log(`[DISCOVERY] Starting enrichment for ${selectedLeads.length} selected leads`);
+      
       // Convert selectedLeads (string IDs) to actual business objects
       const selectedBusinesses = businesses.filter(business => 
         selectedLeads.includes(business.id || '')
       );
       
-      // Log selected businesses with their website URLs
-      console.log(`Enriching ${selectedBusinesses.length} leads with the following details:`);
-      selectedBusinesses.forEach((business) => {
-        const b = business as EnrichableBusiness;
-        console.log(`Lead: ${business.name}, Website URL: ${b.website_url || business.website || '<MISSING>'}`);
-      });
+      // STEP 2: Check if all selected businesses have website URLs
+      console.log(`[DISCOVERY] Checking website URLs for ${selectedBusinesses.length} leads`);
       
-      // Make sure we have website URLs for all leads - this is critical for enrichment
       const businessesWithoutWebsites = selectedBusinesses.filter(
         (business) => {
           const b = business as EnrichableBusiness;
@@ -258,7 +256,7 @@ export default function LeadsDiscoveryPage() {
       );
       
       if (businessesWithoutWebsites.length > 0) {
-        console.error('Some leads are missing website URLs:', 
+        console.error('[DISCOVERY] Some leads are missing website URLs:', 
           businessesWithoutWebsites.map(b => b.name).join(', '));
         
         toast({
@@ -271,13 +269,13 @@ export default function LeadsDiscoveryPage() {
         return;
       }
 
-      // Ensure all leads have website_url field properly set
+      // STEP 3: Ensure all leads have website_url field properly set
       const businessesToEnrich = selectedBusinesses.map(business => {
         const b = business as EnrichableBusiness;
         
         // If website_url is missing but website is available, use that
         if (!b.website_url && business.website) {
-          console.log(`Setting website_url for ${business.name} from website field: ${business.website}`);
+          console.log(`[DISCOVERY] Setting website_url for ${business.name} from website field: ${business.website}`);
           return {
             ...business,
             website_url: business.website
@@ -286,7 +284,7 @@ export default function LeadsDiscoveryPage() {
         
         // If contact.website is available but no website_url, use that
         if (!b.website_url && business.contact?.website) {
-          console.log(`Setting website_url for ${business.name} from contact.website: ${business.contact.website}`);
+          console.log(`[DISCOVERY] Setting website_url for ${business.name} from contact.website: ${business.contact.website}`);
           return {
             ...business,
             website_url: business.contact.website
@@ -296,113 +294,69 @@ export default function LeadsDiscoveryPage() {
         return business as EnrichableBusiness;
       });
 
-      // Store the leads for enrichment and add timestamp to track how long it takes
-      console.log(`Storing ${businessesToEnrich.length} leads for enrichment at ${new Date().toISOString()}`);
-      localStorage.setItem('enriching_leads_count', businessesToEnrich.length.toString());
+      // STEP 4: Set up tracking for the enrichment process
+      console.log(`[DISCOVERY] Setting up tracking for ${businessesToEnrich.length} leads enrichment process`);
+      localStorage.setItem('enrichment_status', 'processing');
+      localStorage.setItem('enrichment_count', businessesToEnrich.length.toString());
       localStorage.setItem('enrichment_start_time', new Date().toISOString());
       
-      // Batch leads if more than 3 to avoid overwhelming the API
-      let batchSize = 3;
-      let batches = [];
+      // STEP 5: Redirect to the enriched leads page with loading state
+      console.log(`[DISCOVERY] Redirecting to enriched leads page with loading state`);
+      router.push(`/leads/enriched?status=processing&count=${businessesToEnrich.length}`);
       
-      // If 3 or fewer, just use a single batch
-      if (businessesToEnrich.length <= batchSize) {
-        batches = [businessesToEnrich];
-      } else {
-        // Create batches of specified size
-        for (let i = 0; i < businessesToEnrich.length; i += batchSize) {
-          batches.push(businessesToEnrich.slice(i, i + batchSize));
-        }
-      }
+      // STEP 6: Call the business enrichment service to process leads with AI
+      console.log(`[DISCOVERY] Calling businessService.enrichBusinesses with ${businessesToEnrich.length} leads - this will trigger AI enrichment via the API`);
+      const enrichmentResult = await businessService.enrichBusinesses(businessesToEnrich);
       
-      console.log(`Split ${businessesToEnrich.length} leads into ${batches.length} batches of max ${batchSize}`);
-      
-      // Immediately redirect to the enriched leads page with loading state
-      router.push(`/leads/enriched?status=loading&count=${businessesToEnrich.length}`);
-      
-      // Process each batch sequentially to avoid rate limiting
-      let allEnrichedBusinesses: Business[] = [];
-      let batchNum = 1;
-      
-      for (const batch of batches) {
-        console.log(`Processing batch ${batchNum} of ${batches.length} with ${batch.length} leads`);
-        
-        try {
-          // Use the business service to enrich the batch
-          const batchResult = await businessService.enrichBusinesses(batch);
-          
-          if (batchResult.error) {
-            console.error(`Error in batch ${batchNum}:`, batchResult.error);
-            // Continue with next batch despite errors
-          } else if (batchResult.businesses && batchResult.businesses.length > 0) {
-            console.log(`Batch ${batchNum} returned ${batchResult.businesses.length} enriched businesses`);
-            allEnrichedBusinesses = [...allEnrichedBusinesses, ...batchResult.businesses];
-          } else {
-            console.warn(`Batch ${batchNum} returned no enriched businesses`);
-          }
-        } catch (batchError) {
-          console.error(`Exception in batch ${batchNum}:`, batchError);
-          // Continue processing other batches despite errors
-        }
-        
-        batchNum++;
-      }
-      
-      // All batches complete - log results
-      console.log(`All batches processed. Total enriched: ${allEnrichedBusinesses.length} of ${businessesToEnrich.length}`);
-      
-      // Update enrichment status in localStorage
-      if (allEnrichedBusinesses.length > 0) {
-        console.log('At least some leads were enriched, attempting to save to database');
-        
-        // Save the enriched leads to the database
-        try {
-          const saveResponse = await fetch('/api/leads/save', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              leads: allEnrichedBusinesses,
-              skipEnrichment: true, // Skip enrichment on save since we've already done it
-            }),
-          });
-
-          if (!saveResponse.ok) {
-            const errorData = await saveResponse.json();
-            console.error('Error saving enriched leads:', errorData);
-            localStorage.setItem('enrichment_status', 'error');
-            localStorage.setItem('enrichment_error', `Database save failed: ${JSON.stringify(errorData)}`);
-          } else {
-            const saveResult = await saveResponse.json();
-            console.log('Leads successfully enriched and saved to database', saveResult);
-            
-            // Store success status in localStorage for the enriched page to display
-            localStorage.setItem('enrichment_status', 'success');
-            localStorage.setItem('enrichment_count', allEnrichedBusinesses.length.toString());
-            localStorage.setItem('enrichment_time', new Date().toISOString());
-          }
-        } catch (saveError) {
-          console.error('Exception saving enriched leads:', saveError);
-          localStorage.setItem('enrichment_status', 'error');
-          localStorage.setItem('enrichment_error', `Save exception: ${saveError instanceof Error ? saveError.message : String(saveError)}`);
-        }
-      } else {
-        console.error('No leads were successfully enriched');
+      // STEP 7: Handle the enrichment result
+      if (enrichmentResult.error) {
+        console.error(`[DISCOVERY] Enrichment failed with error:`, enrichmentResult.error);
         localStorage.setItem('enrichment_status', 'error');
-        localStorage.setItem('enrichment_error', 'No leads were successfully enriched');
+        localStorage.setItem('enrichment_error', enrichmentResult.error);
+      } else if (enrichmentResult.businesses && enrichmentResult.businesses.length > 0) {
+        console.log(`[DISCOVERY] Enrichment succeeded with ${enrichmentResult.businesses.length} enriched businesses`);
+        
+        // Verify AI data exists in response
+        const hasAiData = enrichmentResult.businesses.some(b => {
+          const enrichedBusiness = b as any; // Cast to any to access enrichment_data
+          return enrichedBusiness.enrichment_data && 
+            (enrichedBusiness.enrichment_data.aiOverview || enrichedBusiness.enrichment_data.leadScore);
+        });
+        
+        if (hasAiData) {
+          console.log('[DISCOVERY] Confirmed AI enrichment data is present in response');
+        } else {
+          console.warn('[DISCOVERY] No AI enrichment data found in response - possible failure in AI processing');
+        }
+        
+        localStorage.setItem('enrichment_status', 'success');
+        localStorage.setItem('enrichment_count', enrichmentResult.businesses.length.toString());
+        localStorage.setItem('enrichment_time', new Date().toISOString());
+      } else {
+        console.warn(`[DISCOVERY] Enrichment completed but no businesses were returned`);
+        localStorage.setItem('enrichment_status', 'warning');
+        localStorage.setItem('enrichment_error', 'No enriched businesses were returned');
       }
       
-      // Clear selection state
+      // STEP 8: Clean up
+      console.log(`[DISCOVERY] Enrichment process complete`);
       setSelectedLeads([]);
       setIsEnrichingLeads(false);
 
     } catch (error) {
-      console.error('Error in handleEnrichLeads:', error);
+      console.error('[DISCOVERY] Unhandled error in handleEnrichLeads:', error);
       setIsEnrichingLeads(false);
+      
       // Store error status in localStorage for the enriched page to display
       localStorage.setItem('enrichment_status', 'error');
       localStorage.setItem('enrichment_error', error instanceof Error ? error.message : 'Failed to enrich leads');
+      
+      // Show an error message to the user
+      toast({
+        title: 'Enrichment failed',
+        description: error instanceof Error ? error.message : 'Failed to enrich leads',
+        variant: 'destructive',
+      });
     }
   };
 

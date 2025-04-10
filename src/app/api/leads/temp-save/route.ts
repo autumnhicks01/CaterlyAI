@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       description: business.description || '',
       has_event_space: business.hasEventSpace,
       original_id: business.id,
-      status: 'pending_enrichment',
+      status: 'saved',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       temp_record: true

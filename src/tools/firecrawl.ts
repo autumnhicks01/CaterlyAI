@@ -16,6 +16,8 @@ export interface FirecrawlOptions {
   extractMetadata?: boolean;
   waitUntil?: 'load' | 'domcontentloaded' | 'networkidle0' | 'networkidle2';
   formats?: string[];
+  prompt?: string;
+  schema?: any;
 }
 
 export interface FirecrawlResult {
@@ -47,6 +49,60 @@ function normalizeUrl(url: string): string {
 }
 
 /**
+ * Helper function to extract text from HTML
+ */
+function extractTextFromHtml(html: string): string {
+  try {
+    // Remove scripts and style tags
+    let text = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                   .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+    
+    // Remove HTML tags and decode entities
+    text = text.replace(/<[^>]*>/g, ' ')
+               .replace(/&nbsp;/g, ' ')
+               .replace(/&amp;/g, '&')
+               .replace(/&lt;/g, '<')
+               .replace(/&gt;/g, '>')
+               .replace(/&quot;/g, '"')
+               .replace(/&#39;/g, "'");
+    
+    // Remove excessive whitespace
+    text = text.replace(/\s+/g, ' ').trim();
+    
+    return text;
+  } catch (error) {
+    console.error('[FIRECRAWL] Error extracting text from HTML:', error);
+    return '';
+  }
+}
+
+/**
+ * Extract emails from content using regex
+ */
+function extractEmailsFromContent(content: string): string[] {
+  if (!content) return [];
+  
+  // Email regex pattern - enhanced to catch more email formats
+  const emailPattern = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+  
+  // Find all matches
+  const matches = content.match(emailPattern) || [];
+  
+  // Filter out common false positives and duplicates
+  const filteredEmails = [...new Set(matches)].filter(email => {
+    // Skip common false positives
+    if (email.includes('example.com')) return false;
+    if (email.includes('yourdomain.com')) return false;
+    if (email.includes('domain.com')) return false;
+    if (email.includes('email@')) return false;
+    
+    return true;
+  });
+  
+  return filteredEmails;
+}
+
+/**
  * Extract data from a website using Firecrawl API
  */
 export async function extractWebsiteData(options: FirecrawlOptions): Promise<FirecrawlResult> {
@@ -59,7 +115,9 @@ export async function extractWebsiteData(options: FirecrawlOptions): Promise<Fir
     includeHtml = false,
     extractMetadata = true,
     waitUntil = 'load',
-    formats = []
+    formats = [],
+    prompt,
+    schema
   } = options;
   
   // Set up logging prefix for easy debugging
@@ -121,29 +179,85 @@ export async function extractWebsiteData(options: FirecrawlOptions): Promise<Fir
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
     try {
-      // Define the API endpoint for Firecrawl
+      // Define the API endpoint for Firecrawl - using v1 extract endpoint
       const firecrawlEndpoint = 'https://api.firecrawl.dev/v1/extract';
       
-      // Prepare request body
-      const requestBody = {
-        urls: urlsArray,
-        wait_time: waitTime,
-        extract_contact_info: true,
-        extract_structured_data: true,
-        extract_metadata: extractMetadata,
-        enable_web_search: enableWebSearch,
-        include_html: includeHtml,
-        wait_until: waitUntil,
-        formats: formats.length > 0 ? formats : undefined
+      // Define a schema for structured extraction if not provided
+      const extractionSchema = schema || {
+        type: "object",
+        properties: {
+          venueName: { type: "string", description: "The name of the venue" },
+          address: { type: "string", description: "The full physical address of the venue" },
+          website: { type: "string", description: "The venue's website URL" },
+          description: { type: "string", description: "A detailed description of the venue" },
+          commonEventTypes: { 
+            type: "array", 
+            items: { type: "string" }, 
+            description: "Types of events hosted at the venue (weddings, corporate, etc.)" 
+          },
+          amenities: { 
+            type: "array", 
+            items: { type: "string" }, 
+            description: "Available amenities at the venue" 
+          },
+          inHouseCatering: { 
+            type: "boolean", 
+            description: "Whether the venue offers in-house catering" 
+          },
+          preferredCaterers: {
+            type: "array",
+            items: { type: "string" },
+            description: "List of preferred caterers for the venue"
+          },
+          eventManagerPhone: { 
+            type: "string", 
+            description: "Contact phone number for venue bookings" 
+          },
+          eventManagerEmail: { 
+            type: "string", 
+            description: "Contact email for venue bookings - VERY IMPORTANT, search pages thoroughly for any contact email" 
+          }
+        },
+        required: ["venueName", "eventManagerEmail", "address"]
       };
       
-      console.log(`${logPrefix} 📌 Calling API with settings:`, {
-        urls: urlsArray,
-        wait_time: waitTime,
-        extract_contact_info: true,
-        formats,
-        endpoint: firecrawlEndpoint
-      });
+      // Use a venue-focused research prompt if not provided
+      const researchPrompt = prompt || `Find comprehensive information about the venue at URL ${urlToProcess}, including:
+      
+1. Full official name of the venue
+2. Complete physical address with zip code
+3. Website URL
+4. A concise description of the venue and its facilities
+5. Types of events hosted (weddings, corporate, etc.)
+6. Available amenities and special features
+7. Whether they offer in-house catering
+8. List of any preferred or exclusive caterers
+9. Most importantly, find ALL contact information:
+   - Direct email addresses for bookings or inquiries
+   - Phone numbers
+   - Names of venue managers or coordinators
+   
+If the venue has multiple websites or social media profiles, check all of them for contact information, especially email addresses.
+Search for "Contact Us" pages, staff directories, booking forms, or "Meet the Team" sections.`;
+      
+      // Prepare request body according to v1 API
+      const requestBody: {
+        prompt: string;
+        schema: any;
+        enableWebSearch: boolean;
+        urls?: string[];
+      } = {
+        prompt: researchPrompt,
+        schema: extractionSchema,
+        enableWebSearch: true // Always enable web search for best results
+      };
+      
+      // Also include the URLs if provided
+      if (urlsArray && urlsArray.length > 0) {
+        requestBody.urls = urlsArray;
+      }
+      
+      console.log(`${logPrefix} 📌 Calling Firecrawl v1 extract API for: ${urlToProcess}`);
       
       // Make the API call
       console.log(`${logPrefix} 🔄 Making request to ${firecrawlEndpoint}`);
@@ -160,188 +274,156 @@ export async function extractWebsiteData(options: FirecrawlOptions): Promise<Fir
       clearTimeout(timeoutId);
       
       console.log(`${logPrefix} 📝 Response status: ${response.status}, Status text: ${response.statusText}`);
-      console.log(`${logPrefix} 📝 Response headers:`, Object.fromEntries([...response.headers.entries()]));
       
       if (!response.ok) {
-        const contentType = response.headers.get('content-type') || '';
         const errorText = await response.text();
         console.error(`${logPrefix} ❌ API error: Status ${response.status}, Response: ${errorText.substring(0, 200)}`);
         
-        // Try to parse error if it's JSON
-        let parsedError = errorText;
-        try {
-          if (contentType.includes('application/json')) {
-            const jsonError = JSON.parse(errorText);
-            parsedError = JSON.stringify(jsonError);
-            console.error(`${logPrefix} ❌ Parsed API error:`, jsonError);
+        return {
+          success: false,
+          error: `Firecrawl API error: ${response.status} ${errorText.substring(0, 200)}`,
+          url: urlToProcess
+        };
+      }
+      
+      // Parse the initial response
+      const responseText = await response.text();
+      const responseData = JSON.parse(responseText);
+      
+      // Check if we received a job ID for async extraction
+      if (responseData && responseData.success && responseData.id) {
+        console.log(`${logPrefix} 🔄 Received extraction job ID: ${responseData.id}, polling for results...`);
+        
+        // Poll for results (with timeout)
+        const maxPolls = 12; // Max number of polls (12 * 5s = 60s timeout)
+        let pollCount = 0;
+        let extractionComplete = false;
+        let extractedData = null;
+        
+        const statusEndpoint = `${firecrawlEndpoint}/${responseData.id}`;
+        
+        while (pollCount < maxPolls && !extractionComplete) {
+          // Wait 5 seconds before each poll
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          pollCount++;
+          
+          try {
+            console.log(`${logPrefix} 🔄 Polling extraction status (attempt ${pollCount}/${maxPolls})...`);
+            const statusResponse = await fetch(statusEndpoint, {
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${apiKey}`
+              }
+            });
+            
+            if (!statusResponse.ok) {
+              console.error(`${logPrefix} ❌ Error checking extraction status: ${statusResponse.status}`);
+              continue;
+            }
+            
+            const statusData = await statusResponse.json();
+            
+            console.log(`${logPrefix} 📝 Status: ${statusData.status || 'unknown'}`);
+            
+            if (statusData.status === 'completed') {
+              extractionComplete = true;
+              extractedData = statusData.data;
+              console.log(`${logPrefix} ✅ Extraction completed successfully`);
+            } else if (statusData.status === 'failed') {
+              extractionComplete = true;
+              console.error(`${logPrefix} ❌ Extraction failed: ${statusData.error || 'Unknown error'}`);
+              return {
+                success: false,
+                error: `Extraction failed: ${statusData.error || 'Unknown error'}`,
+                url: urlToProcess
+              };
+            } else {
+              console.log(`${logPrefix} 🔄 Extraction still in progress (${pollCount}/${maxPolls})...`);
+            }
+          } catch (pollError) {
+            console.error(`${logPrefix} ❌ Error polling extraction status:`, pollError);
           }
-        } catch (e) {
-          console.error(`${logPrefix} ❌ Error parsing error response:`, e);
         }
         
-        return {
-          success: false,
-          error: `Firecrawl API error: ${response.status} ${parsedError.substring(0, 200)}`,
-          url: urlToProcess
-        };
-      }
-      
-      // Parse response
-      let data;
-      let responseText;
-      try {
-        responseText = await response.text();
-        console.log(`${logPrefix} 📝 Response body (first 200 chars): ${responseText.substring(0, 200)}...`);
-        data = JSON.parse(responseText);
-      } catch (parseError: unknown) {
-        console.error(`${logPrefix} ❌ JSON parse error: ${parseError}`);
-        console.error(`${logPrefix} ❌ Raw response text:`, responseText?.substring(0, 500));
-        return {
-          success: false,
-          error: `Failed to parse JSON response: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-          url: urlToProcess
-        };
-      }
-      
-      console.log(`${logPrefix} ✅ Successfully extracted data from ${urlToProcess}`);
-      
-      // Handle the array response format from v1 API
-      if (data && Array.isArray(data) && data.length > 0) {
-        const firstResult = data[0];
-        // Log what we got for debugging
-        console.log(`${logPrefix} 📝 Data keys: ${Object.keys(firstResult).join(', ')}`);
-        
-        // Check if we have contact information
-        if (firstResult.contactInformation) {
-          console.log(`${logPrefix} ✅ Contact info found: ${JSON.stringify(firstResult.contactInformation)}`);
+        if (!extractionComplete) {
+          console.error(`${logPrefix} ❌ Extraction timed out after ${maxPolls} attempts`);
+          return {
+            success: false,
+            error: `Extraction timed out after ${maxPolls * 5} seconds`,
+            url: urlToProcess
+          };
         }
         
-        // Check if we have content in different formats
-        if (firstResult.formats) {
-          console.log(`${logPrefix} ✅ Formats available: ${Object.keys(firstResult.formats).join(', ')}`);
+        if (!extractedData) {
+          console.error(`${logPrefix} ❌ No data returned from extraction`);
+          return {
+            success: false,
+            error: 'No data returned from extraction',
+            url: urlToProcess
+          };
         }
         
+        // Return the final extracted data
         return {
           success: true,
-          url: urlToProcess,
-          data: firstResult
-        };
-      } else {
-        console.warn(`${logPrefix} ⚠️ Unexpected API response format`);
-        console.warn(`${logPrefix} ⚠️ Response data:`, JSON.stringify(data).substring(0, 500));
-        return {
-          success: true,
-          url: urlToProcess,
-          data: { content: "No structured data available" }
-        };
-      }
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.error(`${logPrefix} ❌ Request timed out after ${timeout}ms for URL: ${urlToProcess}`);
-        return {
-          success: false,
-          error: `Request timed out after ${timeout}ms`,
+          data: extractedData,
           url: urlToProcess
         };
-      }
+      } 
       
-      console.error(`${logPrefix} ❌ Error during API call:`, error);
-      console.error(`${logPrefix} ❌ Error details:`, {
-        message: error.message,
-        name: error.name,
-        stack: error.stack?.substring(0, 500)
-      });
+      // If no job ID, the response should contain the data directly
+      return {
+        success: true,
+        data: responseData.data || responseData,
+        url: urlToProcess
+      };
+      
+    } catch (fetchError) {
+      clearTimeout(timeoutId);
+      console.error(`${logPrefix} ❌ Error fetching from Firecrawl API:`, fetchError);
       
       return {
         success: false,
-        error: `Error during API call: ${error.message}`,
+        error: `Error fetching from Firecrawl API: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`,
         url: urlToProcess
       };
     }
   } catch (error) {
-    console.error(`${logPrefix} ❌ Error extracting data from ${urlToProcess}:`, error);
+    console.error(`${logPrefix} ❌ Unexpected error:`, error);
+    
     return {
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`,
       url: urlToProcess
     };
   }
 }
 
-/**
- * Extract content from Firecrawl data response
- */
-export function extractContentFromFirecrawlData(data: any): string | null {
-  if (!data) return null;
-  
-  // Initialize content
-  let content = '';
-  
-  // Try different formats to extract content
-  if (typeof data.content === 'string') {
-    content = data.content;
-    console.log(`[FIRECRAWL] Using direct content string (${content.length} chars)`);
-  } else if (data.text) {
-    content = data.text;
-    console.log(`[FIRECRAWL] Using text property (${content.length} chars)`);
-  } else if (data.formats?.text) {
-    content = data.formats.text;
-    console.log(`[FIRECRAWL] Using formats.text (${content.length} chars)`);
-  } else if (data.formats?.markdown) {
-    content = data.formats.markdown;
-    console.log(`[FIRECRAWL] Using formats.markdown (${content.length} chars)`);
-  } else if (data.formats?.html) {
-    content = data.formats.html;
-    console.log(`[FIRECRAWL] Using formats.html (${content.length} chars)`);
-  } else if (Array.isArray(data.content)) {
-    content = data.content
-      .filter((item: any) => item && (item.content || item.text))
-      .map((item: any) => item.content || item.text)
-      .join('\n\n');
-    console.log(`[FIRECRAWL] Using array content (${content.length} chars)`);
-  }
-  
-  return content.length > 0 ? content : null;
-}
-
-/**
- * FireCrawl tool integrated with Mastra framework
- */
+// Add the firecrawlTool export that's used by other files
 export const firecrawlTool = {
-  id: 'firecrawl',
-  name: 'firecrawlTool',
-  description: 'Extract structured data from websites',
-  
-  // Extract method 
-  extract: async function(options: FirecrawlOptions): Promise<FirecrawlResult> {
-    console.log(`[FIRECRAWL] 📌 Tool extraction requested for URL: ${options.url || (options.urls && options.urls[0]) || 'undefined'}`); 
-    const startTime = Date.now();
-    
-    try {
-      // Extract website data
-      const result = await extractWebsiteData(options);
-      
-      // Log duration
-      const duration = Date.now() - startTime;
-      console.log(`[FIRECRAWL] ${result.success ? '✅' : '❌'} Extraction ${result.success ? 'completed' : 'failed'} in ${duration}ms`);
-      
-      return result;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      const url = options.url || (options.urls && options.urls[0]) || '';
-      
-      console.error(`[FIRECRAWL] ❌ Exception during extraction for ${url} (took ${duration}ms):`, error);
-      
-      return {
-        success: false,
-        url,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
+  /**
+   * Extract structured data from a website using Firecrawl v1 API
+   */
+  async extract(options: FirecrawlOptions): Promise<FirecrawlResult> {
+    return extractWebsiteData(options);
   },
   
-  // Mastra Tool-compatible execute method
-  async execute(params: FirecrawlOptions): Promise<FirecrawlResult> {
-    return await this.extract(params);
+  /**
+   * Helper function to extract content from Firecrawl data
+   */
+  extractContent(data: any): string {
+    if (!data) return '';
+    
+    // Try to find content in various response formats
+    return data.text || 
+           data.content || 
+           (data.formats?.text) || 
+           (data.formats?.markdown) ||
+           '';
   }
-}; 
+};
+
+// Export a function to extract content from Firecrawl data
+export function extractContentFromFirecrawlData(data: any): string {
+  return firecrawlTool.extractContent(data);
+}

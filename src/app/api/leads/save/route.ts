@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
       // If this is a new lead, set created_at and status
       if (!business.id) {
         leadData.created_at = new Date().toISOString();
-        leadData.status = 'new';
+        leadData.status = 'saved';
       } else if (business.enrichment_data && Object.keys(business.enrichment_data).length > 0) {
         // Only mark as enriched if it actually has enrichment data
         leadData.status = 'enriched';

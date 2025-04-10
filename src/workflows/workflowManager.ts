@@ -1,9 +1,9 @@
 import { BusinessSearchInput } from '@/workflows/business-search/schemas';
 import { executeBusinessSearch, businessSearchStreamingWorkflow } from '@/workflows/business-search';
-import { enrichLeads, LeadEnrichmentInput } from '@/workflows/index';
+import { LeadEnrichmentInput } from '@/workflows/index';
+import { enrichLeads } from '@/agents/enrichmentAgent';
 import EventEmitter from 'events';
 import { WorkflowOptions } from '@mastra/core/workflows';
-import { extractContentFromFirecrawlData } from '@/tools/firecrawl';
 
 type ContextSetupFn = (context: any) => void;
 
@@ -60,6 +60,7 @@ export class WorkflowManager {
             
             console.log(`Converting ${leadIds.length} leads to standard enrichment format`);
             try {
+              // Use client-side enrichLeads implementation
               const result = await enrichLeads(leadIds);
               console.log(`Enrichment result:`, JSON.stringify(result).substring(0, 500));
               return result;
@@ -76,6 +77,7 @@ export class WorkflowManager {
           // Original lead-enrichment workflow format
           console.log(`Calling enrichLeads with ${data.leadIds?.length || 0} lead IDs`);
           try {
+            // Use client-side enrichLeads implementation
             const startTime = Date.now();
             const result = await enrichLeads(data.leadIds);
             const endTime = Date.now();
@@ -83,7 +85,7 @@ export class WorkflowManager {
             console.log(`Enrichment result structure:`, Object.keys(result));
             
             if (result.success) {
-              console.log(`Enrichment success with data keys:`, Object.keys(result.data || {}));
+              console.log(`Enrichment success with results:`, Object.keys(result.results || {}));
               
               // Ensure the enrichedBusinesses array is properly returned
               if (!result.enrichedBusinesses || !Array.isArray(result.enrichedBusinesses)) {
