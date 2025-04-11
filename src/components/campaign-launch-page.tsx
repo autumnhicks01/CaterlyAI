@@ -189,7 +189,7 @@ export default function CampaignLaunchPage() {
       companyName: (profile as any).business_name || "Your Catering Company",
       description: (profile as any).description || (profile as any).user_input_data?.description || "Premium catering services",
       menuLink: (profile as any).website_url || "",
-      managerContact: (profile as any).contact_phone || "",
+      managerContact: (profile as any).user_input_data?.managerContact || (profile as any).contact_phone || "",
       orderingLink: (profile as any).website_url || "",
       focus: (profile as any).business_type || "catering",
       idealClients: category || "wedding",
@@ -338,6 +338,8 @@ export default function CampaignLaunchPage() {
 
   // Extract subject line from email content with improved regex
   const extractSubjectLine = (content: string): string | null => {
+    if (!content) return null;
+    
     // Look for Subject: at the beginning of a line with case-insensitivity
     const match = content.match(/^[^\S\n]*Subject:\s*(.*)$/mi);
     
@@ -352,10 +354,27 @@ export default function CampaignLaunchPage() {
       return altMatch[1].trim();
     }
     
-    // Last resort: try to find anything that looks like a subject
-    const lastMatch = content.match(/^(.{5,75})(?:\n|$)/);
-    if (lastMatch && lastMatch[1] && !lastMatch[1].toLowerCase().includes('email #')) {
-      return lastMatch[1].trim();
+    // Try to find a line that starts with "Subject:" - common in our format
+    const subjectLineMatch = content.split('\n').find(line => 
+      line.trim().toLowerCase().startsWith('subject:')
+    );
+    
+    if (subjectLineMatch) {
+      return subjectLineMatch.replace(/^subject:\s*/i, '').trim();
+    }
+    
+    // Last resort: try to find anything that looks like a subject line
+    // but avoid capturing "Hi!" which starts every email
+    const lines = content.split('\n');
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine && 
+          trimmedLine.length > 5 && 
+          !trimmedLine.toLowerCase().includes('email #') &&
+          !trimmedLine.toLowerCase().startsWith('hi!') &&
+          !trimmedLine.toLowerCase().startsWith('hi,')) {
+        return trimmedLine;
+      }
     }
     
     return null;
@@ -552,7 +571,7 @@ export default function CampaignLaunchPage() {
         companyName: (profile as any).business_name || "Your Catering Company",
         description: (profile as any).description || (profile as any).user_input_data?.description || "Premium catering services",
         menuLink: (profile as any).website_url || "",
-        managerContact: (profile as any).contact_phone || "",
+        managerContact: (profile as any).user_input_data?.managerContact || (profile as any).contact_phone || "",
         orderingLink: (profile as any).website_url || "",
         focus: (profile as any).business_type || "catering",
         idealClients: categoriesToGenerate[0] || "wedding",

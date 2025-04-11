@@ -16,6 +16,10 @@ interface CateringProfile {
   idealClients?: string;
   specialties?: string[];
   photos?: string[];
+  contactPerson?: { name: string; title: string };
+  location?: string;
+  yearsExperience?: string;
+  contact_phone?: string;
   [key: string]: any;
 }
 
@@ -146,23 +150,27 @@ async function generateBatchedEmails(
   const orderingLink = profile?.orderingLink || "[Ordering Link]";
   const specialties = profile?.specialties?.join(", ") || "custom menu design, dietary accommodations";
   
+  // Extract additional profile info if available
+  const contactPersonName = profile?.contactPerson?.name || "";
+  const contactPersonTitle = profile?.contactPerson?.title || "Catering Manager";
+  const businessLocation = profile?.location || "";
+  const yearsExperience = profile?.yearsExperience || "";
+  const contactPhone = profile?.contact_phone || managerContact;
+  
   // Lead information for personalization, if available
   let leadInfo = "";
   if (leads && leads.length > 0) {
     leadInfo = `
     LEAD INFORMATION (Use this to make emails more relevant):
     - You are targeting ${leads.length} leads in the ${category} category
-    - Example venue: ${leads[0].name || ""}
-    - Type of venue: ${leads[0].type || category}
-    - Location: ${leads[0].location || "local area"}
-    ${leads[0].description ? `- About the venue: ${leads[0].description.substring(0, 200)}...` : ""}
+    - Type of venue: ${category}
+    - Location: local area
     `;
   }
   
   // Enhanced unified prompt combining generation and polish in one step
   const systemPrompt = `
-    You are an expert email campaign creator for catering businesses. You excel at B2B and B2C marketing, 
-    creating persuasive, seasonally-relevant content with perfect grammar and formatting.
+    You are a professional copywriter experienced in crafting short, natural-sounding marketing emails. Please create an 8‑email sequence for a catering business campaign spanning 12 weeks. Each email must:
     
     TODAY'S DATE: ${new Date().toLocaleDateString()}
     CURRENT SEASON: ${season}
@@ -172,61 +180,90 @@ async function generateBatchedEmails(
     Business Name: ${companyName}
     Description: ${description}
     Menu Link: ${menuLink}
-    Manager Contact: ${managerContact}
+    Manager Contact: ${contactPhone || managerContact}
     Ordering Link: ${orderingLink}
     Specialties: ${specialties}
+    Contact Person Name: ${contactPersonName}
+    Contact Person Title: ${contactPersonTitle}
+    Business Location: ${businessLocation}
+    Years Experience: ${yearsExperience}
     
     ${leadInfo}
     
     YOUR TASK:
-    Create ${templateCount} complete email templates for a ${weekSpan}-week drip campaign targeting ${category} clients. These emails should build on each other in a logical sequence that nurtures leads from introduction to booking.
-    
-    FOR EACH EMAIL:
+    Create ${templateCount} complete email templates for a ${weekSpan}-week catering business campaign.
+
+    STRICT EMAIL FORMAT REQUIREMENTS:
+    • EVERY email MUST start with "Hi!" (no name, keep it generic)
+    • DO NOT mention specific venues or locations in the emails
+    • NO specific venue mentions like "Leslie-Alford-Mims House" or any other venue names
+    • The FIRST EMAIL must follow this exact format:
+      "Hi!
+
+      I hope you're doing well. I'm [Contact Person Name], [Contact Person Title] of [Business Name], located at [Location]. We've spent [Years Experience] perfecting our craft, and we'd love to bring our passion for delicious food and catering to your next event.
+
+      If you have something on the calendar soon, I'd be delighted to chat about how we can help. Just reply to this email or book a 15-minute call at this link [Calendar Link] to learn more.
+
+      Best,
+      [Contact Person Name]
+      [Contact Person Title]
+      [Business Name]
+      [Phone Number]
+      [Email]"
+
+    EACH EMAIL MUST:
+    • Stay around 150 words or fewer (concise and focused)
+    • ALWAYS start with "Hi!" (not "Hello", "Greetings", or any other variation)
+    • Omit any "AI" references, using a warm, friendly, conversational tone
+    • Mention only the food and dishes found in the provided company information (no generic examples)
+    • Address the following themes across the 8 emails:
+      1) Introducing the catering service
+      2) Highlighting core services and specialties
+      3) Sharing testimonials or positive feedback
+      4) Offering a limited-time promotion or special deal
+      5) Mentioning seasonal/holiday options
+      6) Addressing common concerns (budget, dietary requirements)
+      7) Providing a "last call" reminder for any promotions
+      8) Wrapping up with a friendly final follow-up
+    • Include a clear call to action in EVERY email - one of these three options:
+      1) Invite them to schedule a 15-minute phone call
+      2) Ask a specific question to encourage them to reply to the email
+      3) Invite them to book a tasting via calendar link
+    • IMPORTANT: EXACTLY 2 EMAILS (no more, no less) must reference a specific upcoming holiday/seasonal event in BOTH the subject line AND email content
+    • Reflect the provided company information to keep the content personal, relevant, and on-brand
+
+    SEQUENCE TIMING:
+    - Email 1 (Day 1): Introduction - Initial Contact (MUST follow the exact format specified above)
+    - Email 2 (Day 5): Core Services
+    - Email 3 (Week 2): Testimonials
+    - Email 4 (Week 3): Limited-Time Promotion
+    - Email 5 (Week 5): Seasonal Options (RECOMMENDED: Make this one of the holiday-themed emails)
+    - Email 6 (Week 7): Address Common Concerns 
+    - Email 7 (Week 9): Last Call Reminder
+    - Email 8 (Week 12): Final Friendly Follow-up
+
+    EMAIL REQUIREMENTS:
     1. Each email MUST have a UNIQUE subject line (under 60 characters)
        - Do NOT use the word "elevate" in any subject line
-       - Each subject line must be completely different in wording, not just slight variations
-       - Use diverse, compelling action words (partner, discover, transform, enhance, etc.)
-    2. Length: 100-200 words per email
-    3. Include seasonal references and upcoming holiday connections where appropriate
-    4. DO NOT use [Lead Name] placeholders - these emails will be sent to general info@ addresses
-    5. Include the catering company's actual links, information, and unique selling points
-    6. ALWAYS include a clear, compelling call to action in EVERY email that specifically invites the recipient to:
-       - Schedule a 15-minute phone call, OR
-       - Book a tasting session, OR
-       - Schedule a menu consultation
-    7. Target the specific needs of ${category} venues and event planners
-    8. Each email must reference how the partnership benefits the venue's clients and makes the venue look better
-    9. Include the sender's full contact information at the end of every email
-    
-    SEQUENCE DETAILS:
-    - Email 1 (Day 1): Introduction - Introduce the company, establish your value proposition for venues
-    - Email 2 (Day 5): Testimonial - Share a venue success story, highlight a specific benefit venues receive
-    - Email 3 (Week 2): Menu Options - Present customized offerings that complement the venue's ambiance
-    - Email 4 (Week 3): Case Study - Tell a success story about a venue partnership with specific results
-    - Email 5 (Week 5): Seasonal Offer - Present a timely, seasonal promotion with venue-specific benefits
-    - Email 6 (Week 7): Client Attraction - Share how your services help venues attract more bookings
-    - Email 7 (Week 9): Partnership Benefits - Outline exclusive advantages for venue partners
-    - Email 8 (Week 12): Final Opportunity - Create urgency with a time-sensitive venue partner program
-    
-    CRITICAL REQUIREMENTS:
-    1. Each email MUST build on the previous ones by referencing the ongoing conversation
-    2. Each email MUST contain EXACTLY ONE clear call-to-action focused on booking a call, tasting, or consultation
-    3. Each email MUST explain benefits from the VENUE'S perspective, not just the end client
-    4. ALL emails must end with the sender's full signature including name, position, company, and email
-    5. Each subject line MUST be distinct and clearly indicate which stage of the sequence it belongs to
-    6. DO NOT use [Lead Name] or any other personalization placeholders - these will go to general email addresses
-    7. NO TWO subject lines should use the same key action word (especially avoid "elevate" entirely)
-    
-    WRITING STYLE REQUIREMENTS:
-    1. Write in a warm, professional, and conversational tone that sounds like a real person
-    2. Avoid stiff or formal language like "I hope this email finds you well" or "I am writing to"
-    3. Do not use AI-sounding phrases like "Don't hesitate to" or "Please feel free to"
-    4. Use natural transitions between paragraphs that maintain a coherent flow 
-    5. Keep emails concise, focused, and scannable with short paragraphs
-    6. Use a friendly yet professional greeting without personal names (e.g., "Hello," or "Hi there,")
+       - EXACTLY 2 emails must reference a holiday/seasonal event in both the subject line and email content
+    2. Length: Must stay around 150 words or fewer
+    3. DO NOT use [Lead Name] placeholders - these emails will be sent to general info@ addresses
+    4. Include the catering company's actual information, specialties, and unique selling points
+    5. ALWAYS include a clear call to action in EVERY email - one of:
+       a) Schedule a 15-minute phone call with the catering manager
+       b) Ask a specific question to encourage a reply
+       c) Book a tasting session via calendar link
+    6. Keep the tone warm, genuine, and free of industry jargon
+    7. Make each email feel natural, helpful, and on topic
+    8. Include a simple signature block at the end of EVERY email with:
+       [Contact Person Name]
+       [Contact Person Title]
+       [Business Name]
+       [Phone Number]
+       [Email]
     
     FORMAT:
-    Format each email clearly with "Email #1", "Email #2", etc. followed by "Subject: [Your Subject]" and then the email body.
+    Format each email clearly with "Email #1", "Email #2", etc. followed by "Subject: [Your Subject]" and then the email body with the signature block at the end.
   `;
 
   try {
@@ -241,19 +278,24 @@ async function generateBatchedEmails(
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Please create ${templateCount} optimized email templates for ${companyName}'s drip campaign targeting ${category} venues and event planners. 
-            Each email should follow the sequence structure provided, building a cohesive journey from introduction to partnership. 
-            Focus on venue benefits, not just end-client benefits.
+            content: `Please create ${templateCount} natural-sounding marketing emails for ${companyName}'s catering business. 
             
-            IMPORTANT REMINDERS:
-            1. Every email must have a UNIQUE subject line with NO REPEATING ACTION WORDS
-            2. DO NOT use the word "elevate" in any subject line
-            3. DO NOT use [Lead Name] or other personalization placeholders
-            4. Each email must have exactly one specific call-to-action
-            5. Include strong sequence transitions to show these are part of an ongoing conversation
-            6. Make these emails sound natural and conversational, not like AI-generated content
+            CRITICAL REMINDERS:
+            1. EVERY email MUST start with "Hi!" (not Hello, Greetings, etc.)
+            2. The FIRST email MUST follow the exact template format specified
+            3. DO NOT mention specific venues like "Leslie-Alford-Mims House" or any venue names
+            4. Keep each email concise (around 150 words or less)
+            5. Use only specific food/dishes mentioned in the company information
+            6. Include EXACTLY 2 emails with holiday/seasonal references in BOTH subject line AND email content
+            7. Every email must have a unique subject line
+            8. Each email MUST include one of these three call-to-action types:
+               - Schedule a 15-minute phone call
+               - A specific question to encourage reply
+               - Book a tasting via calendar link
+            9. Include a simple signature block at the end of each email
+            10. Use warm, conversational language that sounds like a real person wrote it
             
-            Please create all ${templateCount} emails now, formatted clearly with "Email #1", "Email #2", etc.`
+            Please create all ${templateCount} emails now, formatted clearly with "Email #1", "Email #2", etc., including the subject lines and signature blocks.`
           },
         ],
         temperature: 0.7,
@@ -288,19 +330,24 @@ async function generateBatchedEmails(
           { role: "system", content: systemPrompt },
           {
             role: "user",
-            content: `Please create ${templateCount} optimized email templates for ${companyName}'s drip campaign targeting ${category} venues and event planners. 
-            Each email should follow the sequence structure provided, building a cohesive journey from introduction to partnership. 
-            Focus on venue benefits, not just end-client benefits.
+            content: `Please create ${templateCount} natural-sounding marketing emails for ${companyName}'s catering business. 
             
-            IMPORTANT REMINDERS:
-            1. Every email must have a UNIQUE subject line with NO REPEATING ACTION WORDS
-            2. DO NOT use the word "elevate" in any subject line
-            3. DO NOT use [Lead Name] or other personalization placeholders
-            4. Each email must have exactly one specific call-to-action
-            5. Include strong sequence transitions to show these are part of an ongoing conversation
-            6. Make these emails sound natural and conversational, not like AI-generated content
+            CRITICAL REMINDERS:
+            1. EVERY email MUST start with "Hi!" (not Hello, Greetings, etc.)
+            2. The FIRST email MUST follow the exact template format specified
+            3. DO NOT mention specific venues like "Leslie-Alford-Mims House" or any venue names
+            4. Keep each email concise (around 150 words or less)
+            5. Use only specific food/dishes mentioned in the company information
+            6. Include EXACTLY 2 emails with holiday/seasonal references in BOTH subject line AND email content
+            7. Every email must have a unique subject line
+            8. Each email MUST include one of these three call-to-action types:
+               - Schedule a 15-minute phone call
+               - A specific question to encourage reply
+               - Book a tasting via calendar link
+            9. Include a simple signature block at the end of each email
+            10. Use warm, conversational language that sounds like a real person wrote it
             
-            Please create all ${templateCount} emails now, formatted clearly with "Email #1", "Email #2", etc.`
+            Please create all ${templateCount} emails now, formatted clearly with "Email #1", "Email #2", etc., including the subject lines and signature blocks.`
           },
         ],
         temperature: 0.7,
@@ -333,9 +380,51 @@ async function generateBatchedEmails(
  * Helper: Splits the GPT output into an array of email strings.
  */
 function splitIntoEmails(gptOutput: string): string[] {
-  // A naive approach: look for lines with "Email #"
-  const splitted = gptOutput.split(/Email #\d+/i).map((part) => part.trim());
-  // The first split may be empty if the text starts with "Email #1"; remove empties
-  const filtered = splitted.filter((p) => p.length > 10);
-  return filtered;
+  // Look for the Email # pattern to split the output
+  const emailPattern = /Email #\d+/gi;
+  
+  // Find all occurrences of "Email #X"
+  const matches = gptOutput.match(emailPattern) || [];
+  
+  if (!matches.length) {
+    // If no pattern found, return the whole content as one email
+    return [gptOutput.trim()];
+  }
+  
+  // Split content at each Email # marker
+  const parts = [];
+  let lastIndex = 0;
+  
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    const currentIndex = gptOutput.indexOf(match, lastIndex);
+    
+    // If not the first match, add the content from lastIndex to currentIndex
+    if (i > 0) {
+      const content = gptOutput.substring(lastIndex, currentIndex).trim();
+      if (content.length > 10) { // Only add non-empty content
+        parts.push(content);
+      }
+    }
+    
+    // Update lastIndex for next iteration
+    lastIndex = currentIndex + match.length;
+    
+    // For the last match, add everything after it
+    if (i === matches.length - 1) {
+      const content = gptOutput.substring(lastIndex).trim();
+      if (content.length > 10) {
+        parts.push(content);
+      }
+    }
+  }
+  
+  // If we couldn't split properly, fall back to simpler approach
+  if (parts.length === 0) {
+    console.warn("Email splitting failed with pattern approach, falling back to simpler method");
+    const splitted = gptOutput.split(/Email #\d+/i).map((part) => part.trim());
+    return splitted.filter((p) => p.length > 10);
+  }
+  
+  return parts;
 }
