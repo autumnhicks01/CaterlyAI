@@ -12,7 +12,7 @@ import { useCaterly } from "@/app/context/caterly-context"
 import { mapToOutreachCategory } from "@/config/categoryMapping"
 import axios from 'axios'
 import { toast } from "@/hooks/use-toast"
-import { businessService } from "@/lib/services/businessService"
+import { businessService } from "@/services/businessService"
 
 // Define interfaces for Lead and EnrichmentData based on the Supabase schema
 interface EnrichmentData {

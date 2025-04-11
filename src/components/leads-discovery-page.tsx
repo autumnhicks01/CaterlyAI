@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCaterly } from "../app/context/caterly-context"
 import { Badge } from "@/components/ui/badge"
 import { Business } from "@/types/business"
-import { businessService } from "@/lib/services/businessService"
+import { businessService } from "@/services/businessService"
 import { useToast } from "@/hooks/use-toast"
 
 // Extended Business interface with website_url property
@@ -339,47 +339,7 @@ export default function LeadsDiscoveryPage() {
         <h1 className="text-3xl font-bold mb-2 text-center gradient-text">Discovered Leads</h1>
         <p className="text-center text-muted-foreground mb-6">AI-powered lead discovery for your catering business</p>
 
-        {/* Display streaming progress */}
-        {progress && (
-          <div className="max-w-5xl mx-auto mb-4">
-            <div className="p-3 rounded-md bg-secondary/30 border border-purple-500/20">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></span>
-                  <span className="font-medium text-foreground/90">{progress.step}</span>
-                </div>
-                <Badge variant="outline" className={`
-                  ${progress.status === 'started' ? 'bg-amber-100/30 text-amber-800 border-amber-300' : ''}
-                  ${progress.status === 'processing' ? 'bg-blue-100/30 text-blue-800 border-blue-300' : ''}
-                  ${progress.status === 'completed' ? 'bg-green-100/30 text-green-800 border-green-300' : ''}
-                `}>
-                  {progress.status}
-                </Badge>
-              </div>
-              
-              {progress.message && (
-                <p className="text-sm text-muted-foreground">{progress.message}</p>
-              )}
-              
-              {progress.count !== undefined && progress.total !== undefined && (
-                <div className="mt-2">
-                  <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                    <div 
-                      className="bg-gradient-to-r from-purple-600 to-blue-600 h-2 rounded-full transition-all duration-300" 
-                      style={{ width: `${Math.min(100, (progress.count / progress.total) * 100)}%` }}
-                    ></div>
-                  </div>
-                  <div className="flex justify-between text-xs mt-1 text-muted-foreground">
-                    <span>{progress.count} of {progress.total}</span>
-                    <span>{Math.min(100, Math.round((progress.count / progress.total) * 100))}%</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        <div className="max-w-5xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <Card className="border border-purple-500/20 bg-secondary/10 backdrop-blur-sm shadow-medium overflow-hidden">
             <CardHeader className="flex flex-row items-center justify-between border-b border-border/50 bg-secondary/30 py-3">
               <div className="flex items-center space-x-2">

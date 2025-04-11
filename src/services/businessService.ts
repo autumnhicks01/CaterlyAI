@@ -249,155 +249,67 @@ export const businessService = {
       // Basic validation - check for required website URLs
       const missingWebsites = essentialData.filter(lead => !lead.website_url);
       if (missingWebsites.length > 0) {
-        console.error(`[ENRICHMENT] ${missingWebsites.length} leads are missing website URLs`);
-        return { 
-          error: `${missingWebsites.length} leads are missing website URLs and cannot be enriched. Please provide website URLs for: ${missingWebsites.map(l => l.name).join(', ')}`
-        };
+        console.warn(`[ENRICHMENT] Warning: ${missingWebsites.length} leads are missing website URLs`);
       }
 
-      // Create a tracking object in localStorage to monitor enrichment progress
-      localStorage.setItem('enrichment_status', 'processing');
-      localStorage.setItem('enrichment_count', essentialData.length.toString());
-      localStorage.setItem('enrichment_start_time', new Date().toISOString());
+      // STEP 2: First, save leads to database with status="new"
+      console.log('[ENRICHMENT] Saving leads to database before enrichment');
+      
+      // First try to do a temp save to make sure we don't lose the leads
+      try {
+        const tempResponse = await fetch('/api/leads/temp-save', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leads: essentialData })
+        });
+        
+        if (!tempResponse.ok) {
+          console.warn('[ENRICHMENT] Temporary lead save warning:', await tempResponse.text());
+          // Continue anyway - this is just a precaution
+        } else {
+          console.log('[ENRICHMENT] Leads temporarily saved');
+        }
+      } catch (tempError) {
+        console.warn('[ENRICHMENT] Could not perform temporary lead save:', tempError);
+        // Continue anyway - temporary save is just a precaution
+      }
 
-      // Import the enrichment functions here to avoid bundling issues
-      const { processUrl, waitForCompletion } = await import('@/lib/enrichment');
+      // STEP 3: Now process each business through our actual enrichment workflow
+      console.log('[ENRICHMENT] Starting lead enrichment workflow');
       
-      // STEP 2: Save leads to database first with status="new"
-      console.log(`[ENRICHMENT] Saving ${essentialData.length} leads to database`);
+      // Initialize the workflow manager for lead enrichment
+      const workflowManager = new WorkflowManager('lead-enrichment');
       
-      const saveResponse = await fetch('/api/leads/save', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-csrf-protection': '1'
-        },
-        body: JSON.stringify({
-          businesses: essentialData
-        })
+      // Start the lead enrichment workflow
+      const enrichmentResult = await workflowManager.startWorkflow('lead-enrichment', {
+        leads: essentialData,
+        options: {
+          extractWebsiteContent: true, // Get full website content
+          generateAISummary: true,     // Generate AI summary of business
+          saveToDatabase: true,        // Save results to database
+          timeout: 120000              // 2 minute timeout per business
+        }
       });
       
-      if (!saveResponse.ok) {
-        const errorData = await saveResponse.json();
-        console.error("[ENRICHMENT] Failed to save leads:", errorData);
-        
-        localStorage.setItem('enrichment_status', 'error');
-        localStorage.setItem('enrichment_error', `Failed to save leads: ${errorData.error || 'Unknown error'}`);
-        
-        return { error: `Failed to save leads: ${errorData.error || 'Unknown error'}` };
+      console.log('[ENRICHMENT] Enrichment workflow completed', enrichmentResult);
+      
+      // Return results
+      if (!enrichmentResult.success) {
+        return { 
+          error: enrichmentResult.error || 'Unknown error in enrichment workflow',
+          businesses: enrichmentResult.results?.leads
+        };
       }
       
-      const savedLeadsData = await saveResponse.json();
-      const savedLeads = savedLeadsData.leads || [];
-      
-      if (savedLeads.length === 0) {
-        console.error("[ENRICHMENT] No leads were saved successfully");
-        localStorage.setItem('enrichment_status', 'error');
-        localStorage.setItem('enrichment_error', 'No leads were saved successfully');
-        return { error: 'No leads were saved successfully' };
-      }
-      
-      console.log(`[ENRICHMENT] Successfully saved ${savedLeads.length} leads to database`);
-      
-      // STEP 3: Process each lead through the enrichment pipeline
-      console.log(`[ENRICHMENT] Starting enrichment process for ${savedLeads.length} leads`);
-      
-      const enrichedLeads = [];
-      const failedLeads = [];
-      
-      // Process leads one by one to avoid overwhelming the API
-      for (let i = 0; i < savedLeads.length; i++) {
-        const lead = savedLeads[i];
-        try {
-          console.log(`[ENRICHMENT] Processing lead ${i+1}/${savedLeads.length}: ${lead.name}`);
-          
-          // Update progress in localStorage
-          const progress = Math.round(((i+1) / savedLeads.length) * 100);
-          localStorage.setItem('enrichment_progress', progress.toString());
-          localStorage.setItem('enrichment_current_lead', lead.name);
-          
-          // Start enrichment process for this lead's website
-          const { jobId } = await processUrl(lead.website_url);
-          console.log(`[ENRICHMENT] Started job ${jobId} for lead ${lead.name}`);
-          
-          // Wait for enrichment completion
-          const enrichmentResult = await waitForCompletion(jobId, (status, progress) => {
-            console.log(`[ENRICHMENT] Lead ${lead.name} - Status: ${status}, Progress: ${progress}%`);
-          });
-          
-          console.log(`[ENRICHMENT] Enrichment complete for lead ${lead.name}`);
-          
-          // STEP 4: Save enrichment result to database
-          const updateResponse = await fetch('/api/leads/update', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-csrf-protection': '1'
-            },
-            body: JSON.stringify({
-              leadId: lead.id,
-              enrichment_data: enrichmentResult,
-              status: 'enriched',
-              lead_score: enrichmentResult.leadScore?.score,
-              lead_score_label: enrichmentResult.leadScore?.potential
-            })
-          });
-          
-          if (updateResponse.ok) {
-            const updatedLead = await updateResponse.json();
-            console.log(`[ENRICHMENT] Successfully updated lead ${lead.name} with enrichment data`);
-            enrichedLeads.push(updatedLead.lead || lead);
-          } else {
-            console.error(`[ENRICHMENT] Failed to update lead ${lead.name} with enrichment data`);
-            failedLeads.push({
-              id: lead.id,
-              name: lead.name,
-              error: 'Failed to update lead with enrichment data'
-            });
-          }
-          
-        } catch (leadError) {
-          console.error(`[ENRICHMENT] Error processing lead ${lead.name}:`, leadError);
-          failedLeads.push({
-            id: lead.id,
-            name: lead.name,
-            error: leadError instanceof Error ? leadError.message : String(leadError)
-          });
-        }
-      }
-      
-      // STEP 5: Update status and return results
-      const successCount = enrichedLeads.length;
-      const failCount = failedLeads.length;
-      
-      console.log(`[ENRICHMENT] Enrichment process complete. Success: ${successCount}, Failed: ${failCount}`);
-      
-      // Set success status in localStorage
-      localStorage.setItem('enrichment_status', successCount > 0 ? 'success' : 'error');
-      localStorage.setItem('enrichment_count', successCount.toString());
-      localStorage.setItem('enrichment_time', new Date().toISOString());
-      
-      // Clear tracking data
-      localStorage.removeItem('enrichment_start_time');
-      localStorage.removeItem('enrichment_progress');
-      localStorage.removeItem('enrichment_current_lead');
-      
-      // Return the enriched businesses
       return { 
-        businesses: enrichedLeads,
-        error: failCount > 0 
-          ? `${failCount} leads could not be enriched` 
-          : undefined
+        businesses: enrichmentResult.results?.leads || [] 
       };
     } catch (error) {
-      console.error("[ENRICHMENT] Unhandled error in enrichment process:", error);
-      
-      // Ensure error status is set in localStorage
-      localStorage.setItem('enrichment_status', 'error');
-      localStorage.setItem('enrichment_error', error instanceof Error ? 
-        error.message : "Unknown error during enrichment");
-      
-      return { error: error instanceof Error ? error.message : "Unknown error during enrichment" };
+      console.error('[ENRICHMENT] Error in business enrichment process:', error);
+      return { 
+        error: error instanceof Error ? error.message : 'Unknown error in business enrichment',
+        businesses: []
+      };
     }
   }
-};
+}; 

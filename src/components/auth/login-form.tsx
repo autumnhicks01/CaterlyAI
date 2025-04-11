@@ -116,8 +116,8 @@ export function LoginForm() {
         </Button>
       </form>
       
-      {/* Add test user option for easier debugging */}
-      <div className="pt-2">
+      {/* Remove test user option for easier debugging */}
+      {/* <div className="pt-2">
         <Button
           type="button"
           variant="outline"
@@ -130,7 +130,7 @@ export function LoginForm() {
         >
           Fill Test User
         </Button>
-      </div>
+      </div> */}
       
       <div className="text-center text-sm pt-4">
         Don't have an account?{" "}

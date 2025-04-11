@@ -1169,15 +1169,6 @@ export default function CampaignLaunchPage() {
           )}
         </div>
       )}
-
-      {/* Replace with a clear instruction about Launch Campaign */}
-      {!isLaunched && (
-        <div className="mt-6 text-center">
-          <p className="text-muted-foreground mb-4">
-            Click "Launch Campaign" to generate and send email campaigns to your selected leads.
-          </p>
-        </div>
-      )}
     </div>
   )
 }
