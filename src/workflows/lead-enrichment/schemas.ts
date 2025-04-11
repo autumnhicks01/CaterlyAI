@@ -1,12 +1,65 @@
 import { z } from 'zod';
 
 /**
- * Input for the lead enrichment workflow
+ * Input schema for the lead enrichment workflow
  */
 export const leadEnrichmentInputSchema = z.object({
   leadIds: z.array(z.string()).describe('IDs of leads to enrich')
 });
 
+/**
+ * Lead type for the enrichment workflow
+ */
+export interface LeadData {
+  id: string;
+  name?: string;
+  website_url?: string;
+  enrichment_data?: any;
+  lead_score?: number;
+  category?: string;
+  [key: string]: any;
+}
+
+/**
+ * Result type for the fetch-leads step
+ */
+export interface FetchLeadsResult {
+  leads: LeadData[];
+}
+
+/**
+ * Extraction result type for a single lead
+ */
+export interface LeadExtractionResult {
+  leadId: string;
+  success: boolean;
+  error?: string;
+  websiteData?: any;
+  lead?: LeadData;
+  skippedExtraction?: boolean;
+}
+
+/**
+ * Result type for the extraction step
+ */
+export interface ExtractWebsiteDataResult {
+  enrichmentResults: LeadExtractionResult[];
+  successCount: number;
+  failureCount: number;
+  leads: LeadData[];
+}
+
+/**
+ * Enrichment workflow result
+ */
+export interface EnrichmentResult {
+  success: boolean;
+  enrichedBusinesses: LeadData[];
+  error?: string;
+  runId?: string;
+}
+
+// Export input type
 export type LeadEnrichmentInput = z.infer<typeof leadEnrichmentInputSchema>;
 
 /**
@@ -63,7 +116,7 @@ export type EnrichmentData = z.infer<typeof enrichmentDataSchema>;
 export interface LeadEnrichmentResult {
   success: boolean;
   error?: string;
-  updatedLeads?: Lead[];
+  updatedLeads?: LeadData[];
   failedLeads?: string[];
   totalProcessed: number;
   successCount: number;

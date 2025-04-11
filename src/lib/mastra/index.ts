@@ -2,6 +2,7 @@
 import { cryptoPolyfillLoaded, randomUUID } from '@/utils/crypto-polyfill';
 import { Mastra } from "@mastra/core";
 import { validateMastraEnv } from "./config";
+import { safeTraceFunction } from '@/lib/langsmith/safe-import';
 
 // Import workflows
 import { businessSearchWorkflow } from "@/workflows/business-search";
@@ -29,6 +30,12 @@ try {
       "profile-generation": profileGenerationWorkflow,
       // These will be added as they are implemented
       "lead-enrichment": leadEnrichmentWorkflow,
+    },
+    // Add telemetry configuration
+    telemetry: {
+      serviceName: "caterly-ai",
+      enabled: true,
+      // This will leverage the OpenTelemetry setup from instrumentation.ts
     }
   });
   console.log("[Mastra] Mastra instance created successfully");

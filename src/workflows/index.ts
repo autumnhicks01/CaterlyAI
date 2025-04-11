@@ -1,11 +1,8 @@
 /**
  * Workflows Index
  * 
- * This file exports all workflows implemented in the application,
- * providing a centralized entry point for workflow functionality.
+ * This file exports all workflows implemented in the application.
  */
-
-import { z } from 'zod';
 
 // Business Search Workflow
 export { 
@@ -15,28 +12,38 @@ export {
 
 export type { 
   BusinessSearchInput,
-  BusinessSearchResult,
-  EnhancedBusinessResult 
+  BusinessSearchResult
 } from './business-search/schemas';
 
-// Import the workflow
+// Lead Enrichment Workflow
 import leadEnrichmentWorkflow from './lead-enrichment';
-
-// Use the client-side implementation from enrichmentAgent
 import { enrichLeads } from '@/agents/enrichmentAgent';
 
-// Export the workflow and the enrichLeads function
 export { 
   leadEnrichmentWorkflow,
   enrichLeads
 };
 
-// Lead enrichment input interface
-export type { LeadEnrichmentInput } from './lead-enrichment/schemas';
+export type { LeadEnrichmentInput, LeadData } from './lead-enrichment/schemas';
+
+// Outreach Campaign Workflow
+import { outreachCampaignWorkflow } from './outreach-campaign';
+
+export {
+  outreachCampaignWorkflow,
+  executeOutreachCampaign,
+  generateCategoryEmails
+} from './outreach-campaign';
+
+export type {
+  OutreachCampaignInput,
+  OutreachCampaignResult
+} from './outreach-campaign/schemas';
 
 // Export workflows object as default
 const workflows = {
-  'lead-enrichment': leadEnrichmentWorkflow
+  'lead-enrichment': leadEnrichmentWorkflow,
+  'outreach-campaign': outreachCampaignWorkflow
 };
 
 export default workflows; 

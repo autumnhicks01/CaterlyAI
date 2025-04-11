@@ -31,7 +31,7 @@ const nextConfig = {
     serverActions: {
       allowedOrigins: ['localhost:3000', 'cateringai-six.vercel.app'],
       bodySizeLimit: '10mb'
-    },
+    }
   },
   // Let Node.js handle these packages natively instead of bundling them
   serverExternalPackages: [
@@ -44,7 +44,14 @@ const nextConfig = {
     'libsql',
     'pino-pretty',
     'pino-abstract-transport',
-    'sonic-boom'
+    'sonic-boom',
+    '@opentelemetry/api',
+    '@opentelemetry/sdk-node',
+    '@opentelemetry/resources',
+    '@opentelemetry/semantic-conventions',
+    'langsmith',
+    'async_hooks',
+    'node:async_hooks'
   ],
   // Transpile these packages to ensure proper bundling
   transpilePackages: [
@@ -111,8 +118,30 @@ const nextConfig = {
       use: 'null-loader'
     });
     
-    // Provide fallbacks for Node.js built-in modules on the client side
+    // Handle Node.js built-in modules on the client
     if (!isServer) {
+      // Add resolver for node: protocol
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        'node:async_hooks': false,
+        'node:buffer': false,
+        'node:crypto': false,
+        'node:events': false,
+        'node:fs': false,
+        'node:fs/promises': false,
+        'node:http': false,
+        'node:https': false,
+        'node:net': false,
+        'node:os': false,
+        'node:path': false,
+        'node:process': false,
+        'node:stream': false,
+        'node:url': false,
+        'node:util': false,
+        'node:zlib': false,
+      };
+      
+      // Provide fallbacks for Node.js built-in modules on the client side
       config.resolve.fallback = {
         ...config.resolve.fallback,
         fs: false,
@@ -120,8 +149,19 @@ const nextConfig = {
         net: false,
         tls: false,
         worker_threads: false,
-        child_process: false
+        child_process: false,
+        async_hooks: false,
+        'node:async_hooks': false,
+        // Add explicit fallbacks for any modules importing node:async_hooks
+        'langsmith/traceable': 'false',
+        'langsmith/wrappers': 'false'
       };
+      
+      // Additional handling for node: protocol imports
+      config.module.rules.push({
+        test: /node:async_hooks/,
+        use: 'null-loader'
+      });
     }
     
     return config;

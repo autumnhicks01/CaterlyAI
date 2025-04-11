@@ -1,5 +1,14 @@
+// Disable LangSmith tracing to prevent node:async_hooks imports
+if (typeof window !== 'undefined' && typeof process !== 'undefined' && process.env) {
+  process.env.LANGCHAIN_CALLBACKS_DISABLED = 'true';
+  process.env.LANGCHAIN_TRACING_V2 = 'false';
+}
+
 import { Business, BusinessSearchRequest, BusinessSearchResponse } from "@/types/business";
-import { WorkflowManager } from "@/workflows/workflowManager";
+// DO NOT directly import WorkflowManager - must use dynamic import
+
+// Flag for browser environment
+const isBrowser = typeof window !== 'undefined';
 
 // Storage keys
 const SELECTED_LEADS_STORAGE_KEY = 'catering_ai_selected_leads';
@@ -277,8 +286,40 @@ export const businessService = {
       // STEP 3: Now process each business through our actual enrichment workflow
       console.log('[ENRICHMENT] Starting lead enrichment workflow');
       
+      // We're in the browser - call the API endpoint instead of using WorkflowManager directly
+      if (isBrowser) {
+        console.log('[ENRICHMENT] Client-side environment detected, using API for enrichment');
+        
+        // Call the enrichment API endpoint
+        const apiResponse = await fetch('/api/leads/enrich', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ leads: essentialData })
+        });
+        
+        if (!apiResponse.ok) {
+          const errorText = await apiResponse.text();
+          throw new Error(`Enrichment API failed: ${apiResponse.status} ${apiResponse.statusText} - ${errorText}`);
+        }
+        
+        const apiResult = await apiResponse.json();
+        console.log('[ENRICHMENT] API enrichment completed', apiResult);
+        
+        // Return API response
+        return {
+          businesses: apiResult.leads || apiResult.businesses || [],
+          error: apiResult.error
+        };
+      }
+      
+      // Server-side: Dynamically import WorkflowManager
+      console.log('[ENRICHMENT] Server-side environment, using WorkflowManager');
+      
+      // Lazy-load WorkflowManager to avoid node:async_hooks import issues
+      const { default: WorkflowManagerClass } = await import('@/workflows/workflowManager');
+      
       // Initialize the workflow manager for lead enrichment
-      const workflowManager = new WorkflowManager('lead-enrichment');
+      const workflowManager = new WorkflowManagerClass('lead-enrichment');
       
       // Start the lead enrichment workflow
       const enrichmentResult = await workflowManager.startWorkflow('lead-enrichment', {

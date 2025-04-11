@@ -1,5 +1,21 @@
 "use client"
 
+// IMPORTANT: This must be the first code executed, before any imports
+// to prevent node:async_hooks from being imported on the client
+if (typeof window !== 'undefined') {
+  // Disable LangSmith tracing completely on the client side
+  if (typeof process !== 'undefined' && process.env) {
+    process.env.LANGCHAIN_CALLBACKS_DISABLED = 'true';
+    process.env.LANGCHAIN_TRACING_V2 = 'false';
+    // Explicitly set to prevent node:async_hooks imports
+    process.env.LANGCHAIN_DISABLE_ASYNC_HOOKS = 'true';
+  }
+  
+  // Add a global flag that can be checked before any imports
+  // This helps prevent the module from being loaded at all
+  (window as any).__DISABLE_LANGSMITH__ = true;
+}
+
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
@@ -8,8 +24,21 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { useCaterly } from "../app/context/caterly-context"
 import { Badge } from "@/components/ui/badge"
 import { Business } from "@/types/business"
-import { businessService } from "@/services/businessService"
+// Lazily load businessService to avoid node:async_hooks issues during component rendering
+// Import directly from services/businessService
 import { useToast } from "@/hooks/use-toast"
+
+// Create a lazily loaded wrapper for businessService
+let businessService: any = null;
+
+// Dynamically load businessService only when needed
+const loadBusinessService = async () => {
+  if (!businessService) {
+    const module = await import('@/services/businessService');
+    businessService = module.businessService;
+  }
+  return businessService;
+};
 
 // Extended Business interface with website_url property
 interface EnrichableBusiness extends Business {
@@ -127,6 +156,9 @@ export default function LeadsDiscoveryPage() {
       }
 
       try {
+        // First load the businessService
+        const businessServiceInstance = await loadBusinessService();
+        
         setLoading(true);
         setBusinesses([]);
         setError(null);
@@ -145,7 +177,7 @@ export default function LeadsDiscoveryPage() {
         console.log(`Starting fast search for: ${query} in location: ${campaign.coordinates?.lat},${campaign.coordinates?.lng}`);
         
         // Use fast search for immediate results
-        const results = await businessService.fastSearch({
+        const results = await businessServiceInstance.fastSearch({
           query,
           location: campaign.coordinates 
             ? `${campaign.coordinates.lat},${campaign.coordinates.lng}` 
@@ -237,6 +269,9 @@ export default function LeadsDiscoveryPage() {
     setIsEnrichingLeads(true);
     
     try {
+      // First, load the businessService
+      const businessServiceInstance = await loadBusinessService();
+      
       // STEP 1: Get the selected businesses
       console.log(`[DISCOVERY] Starting enrichment for ${selectedLeads.length} selected leads`);
       
@@ -300,7 +335,7 @@ export default function LeadsDiscoveryPage() {
       
       // STEP 5: Call the business enrichment service to process leads with AI
       console.log(`[DISCOVERY] Calling businessService.enrichBusinesses with ${businessesToEnrich.length} leads`);
-      const enrichmentResult = await businessService.enrichBusinesses(businessesToEnrich);
+      const enrichmentResult = await businessServiceInstance.enrichBusinesses(businessesToEnrich);
       
       // STEP 6: Handle any errors from the enrichment process
       if (enrichmentResult.error) {

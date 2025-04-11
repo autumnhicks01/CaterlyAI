@@ -1,17 +1,44 @@
+import '@/lib/langsmith-init';
 import { BusinessSearchInput } from '@/workflows/business-search/schemas';
 import { executeBusinessSearch, businessSearchStreamingWorkflow } from '@/workflows/business-search';
-import { LeadEnrichmentInput } from '@/workflows/index';
+import { LeadEnrichmentInput, OutreachCampaignInput } from '@/workflows/index';
 import { enrichLeads } from '@/agents/enrichmentAgent';
+import { executeOutreachCampaign } from '@/workflows/outreach-campaign';
 import EventEmitter from 'events';
 import { WorkflowOptions } from '@mastra/core/workflows';
+import { createTraceableFunction } from '@/lib/langsmith-client';
 
 type ContextSetupFn = (context: any) => void;
+
+// Check if we're in a browser environment
+const isBrowser = typeof window !== 'undefined';
 
 /**
  * WorkflowManager provides a unified interface for executing workflows
  * This abstraction allows for easier usage across the application
  */
 export class WorkflowManager {
+  private workflowName: string;
+
+  /**
+   * Create a new workflow manager
+   * @param workflowName Default workflow name for this manager
+   */
+  constructor(workflowName: string = 'default') {
+    this.workflowName = workflowName;
+  }
+
+  /**
+   * Start a workflow by name
+   * @param workflowName - Name of the workflow to execute
+   * @param data - Input data for the workflow
+   * @param options - Options for the workflow run
+   * @returns Result of the workflow execution
+   */
+  async startWorkflow(workflowName: string, data: any, options?: WorkflowOptions): Promise<any> {
+    return this.executeWorkflow(workflowName, data, options);
+  }
+
   /**
    * Execute a workflow by name
    * @param workflowName - Name of the workflow to execute
@@ -21,102 +48,18 @@ export class WorkflowManager {
    */
   async executeWorkflow(workflowName: string, data: any, options?: WorkflowOptions): Promise<any> {
     console.log(`Executing workflow: ${workflowName}`);
-    console.log(`Workflow input data:`, JSON.stringify(data).substring(0, 500));
-
+    
     try {
       switch (workflowName) {
         case 'business-search':
-          console.log("Executing business-search workflow");
           return this.executeBusinessSearchWorkflow(data);
         
-        case 'business-search-streaming':
-          console.log("Executing business-search-streaming workflow");
-          return this.executeBusinessSearchStreamingWorkflow(data);
-        
         case 'lead-enrichment':
-        case 'lead-enrichment-direct': // Handle both workflow names for backward compatibility
-          console.log("Executing lead-enrichment workflow with input:", JSON.stringify(data).substring(0, 200));
+        case 'lead-enrichment-direct':
+          return this.executeLeadEnrichmentWorkflow(data);
           
-          // Ensure we have leadIds for the enrichLeads function
-          if (workflowName === 'lead-enrichment-direct' && data.leads && Array.isArray(data.leads)) {
-            // Convert leads to leadIds for the standard enrichment process
-            const leadIds = data.leads.map((lead: any) => lead.id).filter(Boolean);
-            
-            if (leadIds.length === 0) {
-              console.warn("No valid lead IDs found in provided leads");
-              return {
-                success: false,
-                enrichedBusinesses: [],
-                result: {
-                  totalProcessed: 0,
-                  successCount: 0,
-                  failureCount: 0,
-                  details: [],
-                  highValueLeads: 0
-                },
-                error: "No valid lead IDs provided for enrichment"
-              };
-            }
-            
-            console.log(`Converting ${leadIds.length} leads to standard enrichment format`);
-            try {
-              // Use client-side enrichLeads implementation
-              const result = await enrichLeads(leadIds);
-              console.log(`Enrichment result:`, JSON.stringify(result).substring(0, 500));
-              return result;
-            } catch (error) {
-              console.error("Error in lead-enrichment-direct workflow:", error);
-              return {
-                success: false,
-                error: error instanceof Error ? error.message : String(error),
-                details: "Error occurred in enrichLeads function"
-              };
-            }
-          }
-          
-          // Original lead-enrichment workflow format
-          console.log(`Calling enrichLeads with ${data.leadIds?.length || 0} lead IDs`);
-          try {
-            // Use client-side enrichLeads implementation
-            const startTime = Date.now();
-            const result = await enrichLeads(data.leadIds);
-            const endTime = Date.now();
-            console.log(`Enrichment completed in ${(endTime-startTime)/1000} seconds`);
-            console.log(`Enrichment result structure:`, Object.keys(result));
-            
-            if (result.success) {
-              console.log(`Enrichment success with results:`, Object.keys(result.results || {}));
-              
-              // Ensure the enrichedBusinesses array is properly returned
-              if (!result.enrichedBusinesses || !Array.isArray(result.enrichedBusinesses)) {
-                console.warn('No enrichedBusinesses array found in result, creating empty array');
-                result.enrichedBusinesses = [];
-              }
-              
-              // Log the enrichment results summary
-              console.log(`Enrichment summary: ${result.enrichedBusinesses.length} businesses enriched out of ${data.leadIds?.length || 0} requested`);
-              if (result.enrichedBusinesses.length > 0) {
-                console.log(`Sample enriched business:`, {
-                  id: result.enrichedBusinesses[0].id,
-                  name: result.enrichedBusinesses[0].name,
-                  hasEnrichmentData: !!result.enrichedBusinesses[0].enrichment_data,
-                  leadScore: result.enrichedBusinesses[0].lead_score
-                });
-              }
-            } else {
-              console.error(`Enrichment failed with error:`, result.error);
-            }
-            
-            return result;
-          } catch (error) {
-            console.error("Error in lead-enrichment workflow:", error);
-            return {
-              success: false,
-              error: error instanceof Error ? error.message : String(error),
-              stack: error instanceof Error ? error.stack : "No stack trace available",
-              details: "Exception thrown from enrichLeads function"
-            };
-          }
+        case 'outreach-campaign':
+          return this.executeOutreachCampaignWorkflow(data);
           
         default:
           throw new Error(`Workflow ${workflowName} not found`);
@@ -124,17 +67,9 @@ export class WorkflowManager {
     } catch (error) {
       console.error(`Error executing workflow ${workflowName}:`, error);
       
-      if (error instanceof Error) {
-        return {
-          success: false,
-          error: error.message,
-          stack: error.stack,
-        };
-      }
-      
       return {
         success: false,
-        error: String(error),
+        error: error instanceof Error ? error.message : String(error),
       };
     }
   }
@@ -146,51 +81,43 @@ export class WorkflowManager {
     const { query, location, radius } = data;
     return executeBusinessSearch(query, location, radius);
   }
-  
+
   /**
-   * Execute the business search workflow with streaming
+   * Execute the lead enrichment workflow
    */
-  private async executeBusinessSearchStreamingWorkflow(data: BusinessSearchInput) {
-    const { query, location, radius } = data;
-    
-    console.log(`Executing streaming business search workflow for "${query}" in ${location}`);
-    
-    try {
-      // Create progress emitter that the workflow can use
-      const progressEmitter = new EventEmitter();
+  private async executeLeadEnrichmentWorkflow(data: any) {
+    // For direct enrichment with lead objects
+    if (data.leads && Array.isArray(data.leads)) {
+      const leadIds = data.leads.map((lead: any) => lead.id).filter(Boolean);
       
-      // Create a new workflow run with the streaming workflow
-      const { runId, start } = businessSearchStreamingWorkflow.createRun();
+      if (leadIds.length === 0) {
+        return {
+          success: false,
+          enrichedBusinesses: [],
+          error: "No valid lead IDs provided for enrichment"
+        };
+      }
       
-      // Trigger data for the workflow
-      const triggerData = { query, location, radius };
-      
-      // Run the workflow with the progressEmitter
-      const result = await start({
-        triggerData
-      });
-      
-      console.log("Streaming workflow execution completed");
-      
-      // Get the final results from the validate-businesses step
-      const validationResults = result.results?.['validate-businesses'];
-      
-      return {
-        success: true,
-        data: {
-          status: 'success',
-          output: validationResults
-        },
-        runId
-      };
-    } catch (error) {
-      console.error("Error executing streaming business search workflow:", error);
-      
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : String(error)
-      };
+      return enrichLeads(leadIds);
     }
+    
+    // Standard enrichment with leadIds
+    return enrichLeads(data.leadIds || []);
+  }
+
+  /**
+   * Execute the outreach campaign workflow
+   */
+  private async executeOutreachCampaignWorkflow(data: OutreachCampaignInput) {
+    const { categories, userEmail } = data;
+    
+    // Create a progress callback function if needed
+    const progressCallback = data.progressEmitter ? 
+      (event: { step: string; status: string; message?: string }) => {
+        data.progressEmitter?.emit('progress', event);
+      } : undefined;
+    
+    return executeOutreachCampaign(categories || [], userEmail, progressCallback);
   }
 }
 

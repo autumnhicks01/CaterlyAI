@@ -1,15 +1,35 @@
-import { OpenAI } from 'openai';
+import OpenAI from 'openai';
 import { OpenAIStream } from 'ai';
 
-// Create OpenAI client
-const apiKey = process.env.OPENAI_API_KEY;
-
-if (!apiKey) {
-  console.warn('Missing OPENAI_API_KEY environment variable');
+/**
+ * Creates a traced OpenAI client for use in production
+ * Uses dynamic imports to avoid client-side issues
+ */
+export async function createTracedOpenAIClient() {
+  // Create base OpenAI client
+  const openaiClient = new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  });
+  
+  // Only use LangSmith on server-side
+  if (typeof window !== 'undefined') {
+    return openaiClient;
+  }
+  
+  try {
+    // Dynamically import LangSmith wrappers
+    const { wrapOpenAI } = await import('langsmith/wrappers');
+    
+    // Return wrapped client for tracing
+    return wrapOpenAI(openaiClient);
+  } catch (error) {
+    console.error('Error creating traced OpenAI client:', error);
+    return openaiClient;
+  }
 }
 
 export const openai = (model: string) => {
-  const client = new OpenAI({ apiKey });
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   
   return async (messages: any[]) => {
     const response = await client.chat.completions.create({
