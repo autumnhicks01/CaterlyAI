@@ -674,6 +674,17 @@ export default function EnrichedLeadsPage() {
       // Get primary category from selected leads
       const primaryCategory = leads.find(l => selectedLeads.includes(l.id))?.category?.toLowerCase() || 'wedding';
       
+      // Get all categories from selected leads (should be just one in most cases)
+      const uniqueCategories = Array.from(new Set(
+        leads
+          .filter(l => selectedLeads.includes(l.id))
+          .map(l => l.category?.toLowerCase() || '')
+          .filter(cat => cat !== '')
+      ));
+      
+      const categoriesParam = uniqueCategories.length > 0 ? 
+        uniqueCategories.join(',') : primaryCategory;
+      
       // Store minimal required context
       setCampaign({
         name: `Campaign-${new Date().toISOString().split('T')[0]}`,
@@ -745,7 +756,7 @@ export default function EnrichedLeadsPage() {
       });
       
       // Redirect to campaign launch with initializing flag and auto-generate flag
-      router.push(`/campaign/launch?initializing=true&leads=${selectedLeadIds.join(',')}&autoGenerate=true`);
+      router.push(`/campaign/launch?initializing=true&leads=${selectedLeadIds.join(',')}&autoGenerate=true&categories=${categoriesParam}`);
       
     } catch (error) {
       console.error("Error launching campaign:", error);

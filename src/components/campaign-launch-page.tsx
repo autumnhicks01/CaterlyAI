@@ -74,7 +74,15 @@ export default function CampaignLaunchPage() {
     const leadIds = searchParams.get('leads')?.split(',').filter(Boolean) || [];
     const autoGenerate = searchParams.get('autoGenerate') === 'true';
     
-    console.log("Campaign launch parameters:", { initializing, leadCount: leadIds.length, autoGenerate });
+    // Get categories from URL if provided
+    const categoriesFromURL = searchParams.get('categories')?.split(',').filter(Boolean) || [];
+    
+    console.log("Campaign launch parameters:", { 
+      initializing, 
+      leadCount: leadIds.length, 
+      autoGenerate,
+      categoriesFromURL 
+    });
     
     if (!campaign) {
       console.log("No campaign found in context, redirecting to enriched leads page");
@@ -88,18 +96,32 @@ export default function CampaignLaunchPage() {
     // Get categories either from leads or from predefined list if no leads
     let uniqueCategories: string[] = [];
     
-    // If we have leads, extract categories from them
-    if (enrichedLeads && enrichedLeads.length > 0) {
+    // First try to use categories from URL if available
+    if (categoriesFromURL.length > 0) {
+      uniqueCategories = categoriesFromURL;
+      console.log(`Using categories from URL: ${uniqueCategories.join(', ')}`);
+    }
+    // Otherwise, extract from leads if available
+    else if (enrichedLeads && enrichedLeads.length > 0) {
       uniqueCategories = Array.from(new Set(
         enrichedLeads
           .map(lead => lead.category?.toLowerCase() || '')
           .filter(category => category !== '')
       ));
+      
+      console.log(`Found ${uniqueCategories.length} unique categories from ${enrichedLeads.length} leads: ${uniqueCategories.join(', ')}`);
     }
     
-    // If no leads or no categories from leads, use default categories
+    // If no leads or no categories from leads, use the campaign category or a default
     if (uniqueCategories.length === 0) {
-      uniqueCategories = ['wedding', 'corporate', 'education'];
+      if (campaign && campaign.eventType) {
+        uniqueCategories = [campaign.eventType.toLowerCase()];
+        console.log(`No categories from leads, using campaign event type: ${campaign.eventType}`);
+      } else {
+        // Last resort fallback to wedding only
+        uniqueCategories = ['wedding'];
+        console.log('No categories from leads or campaign, defaulting to wedding category only');
+      }
     }
     
     console.log("Setting up categories:", uniqueCategories);
@@ -556,7 +578,35 @@ export default function CampaignLaunchPage() {
       setIsGeneratingEmails(true);
       showStatus("Generating campaign emails...");
       
-      const categoriesToGenerate = categories.length > 0 ? categories : ['wedding', 'corporate', 'education'];
+      // Only generate emails for categories that have leads
+      const categoriesToGenerate = [];
+      
+      // If we have leads, only include categories that actually have leads
+      if (enrichedLeads && enrichedLeads.length > 0) {
+        // Get unique categories from leads
+        const leadCategories = Array.from(new Set(
+          enrichedLeads
+            .map(lead => lead.category?.toLowerCase() || '')
+            .filter(category => category !== '')
+        ));
+        
+        if (leadCategories.length > 0) {
+          categoriesToGenerate.push(...leadCategories);
+          console.log(`Will only generate emails for categories with leads: ${leadCategories.join(', ')}`);
+        } else {
+          // Fallback to primary category if no categories found in leads
+          categoriesToGenerate.push('wedding');
+          console.log('No categories found in leads, defaulting to wedding category');
+        }
+      } else if (categories.length > 0) {
+        // Use existing categories if available
+        categoriesToGenerate.push(...categories);
+        console.log(`Using existing categories: ${categories.join(', ')}`);
+      } else {
+        // Last resort fallback
+        categoriesToGenerate.push('wedding');
+        console.log('No leads or categories found, defaulting to wedding category');
+      }
       
       // Ensure we have a profile
       if (!profile) {

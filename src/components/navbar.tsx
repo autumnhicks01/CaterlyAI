@@ -82,16 +82,18 @@ export default function Navbar() {
   if (pathname === "/") return null
 
   const navItems: NavItemType[] = [
-    {
-      name: "Profile",
-      path: profileId ? `/profile/${profileId}` : "/profile/setup", 
-      hasDropdown: false
-    },
-    {
-      name: "Marketing",
-      path: profileId ? `/marketing/ai-profile/${profileId}?forceRegenerate=true` : "/profile/setup",
-      hasDropdown: false
-    },
+    ...(profileId ? [
+      {
+        name: "Profile",
+        path: `/profile/${profileId}`, 
+        hasDropdown: false as const
+      },
+      {
+        name: "Marketing",
+        path: `/marketing/ai-profile/${profileId}?forceRegenerate=true`,
+        hasDropdown: false as const
+      },
+    ] : []),
     { name: "Campaign", path: "/campaign/setup", hasDropdown: false },
     {
       name: "Leads",
