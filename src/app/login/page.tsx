@@ -1,5 +1,6 @@
 import { Suspense } from "react"
 import { LoginForm } from "@/components/auth/login-form"
+import { WaitlistForm } from "@/components/auth/waitlist-form"
 
 // Remove client component for real-time debugging
 // import { ClientDebugInfo } from '@/components/auth/client-debug-info'
@@ -14,6 +15,10 @@ export default function LoginPage() {
       
       <Suspense fallback={<div className="text-center">Loading login form...</div>}>
         <LoginForm />
+      </Suspense>
+      
+      <Suspense fallback={<div className="text-center">Loading waitlist form...</div>}>
+        <WaitlistForm />
       </Suspense>
       
       {/* Remove debug component that displays auth state in dev */}
