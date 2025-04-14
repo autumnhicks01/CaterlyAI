@@ -1,32 +1,36 @@
 import { Suspense } from "react"
-import { LoginForm } from "@/components/auth/login-form"
 import { WaitlistForm } from "@/components/auth/waitlist-form"
-
-// Remove client component for real-time debugging
-// import { ClientDebugInfo } from '@/components/auth/client-debug-info'
+import { VideoEmbed } from "@/components/ui/video-embed"
 
 export default function LoginPage() {
   return (
-    <div className="container flex flex-col items-center justify-center min-h-[80vh] py-12">
-      {/* Remove hidden debug element for Vercel deployment */}
-      {/* <div className="hidden">
-        <div id="login-page-loaded" data-timestamp={Date.now()}>Login page loaded</div>
-      </div> */}
-      
-      <Suspense fallback={<div className="text-center">Loading login form...</div>}>
-        <LoginForm />
-      </Suspense>
-      
-      <Suspense fallback={<div className="text-center">Loading waitlist form...</div>}>
-        <WaitlistForm />
-      </Suspense>
-      
-      {/* Remove debug component that displays auth state in dev */}
-      {/* {process.env.NODE_ENV !== 'production' && (
-        <div className="mt-8 p-4 border rounded bg-black/5 w-full max-w-md text-xs">
-          <ClientDebugInfo />
+    <div className="container py-12">
+      <div className="grid md:grid-cols-2 gap-8 items-start">
+        <div className="flex flex-col">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold mb-2">Welcome to CaterlyAI</h1>
+            <p className="text-gray-600">Your AI-powered catering assistant</p>
+          </div>
+          
+          <div className="rounded-lg overflow-hidden shadow-lg mb-8">
+            <VideoEmbed 
+              url="https://www.youtube.com/embed/BxlOxrDLV_4" 
+              title="Caterly Introduction" 
+            />
+          </div>
         </div>
-      )} */}
+        
+        <div className="flex flex-col space-y-8">
+          <Suspense fallback={<div className="text-center">Loading waitlist form...</div>}>
+            <WaitlistForm />
+          </Suspense>
+          
+          {/* Login temporarily hidden */}
+          {/* <Suspense fallback={<div className="text-center">Loading login form...</div>}>
+            <LoginForm />
+          </Suspense> */}
+        </div>
+      </div>
     </div>
   )
 } 
