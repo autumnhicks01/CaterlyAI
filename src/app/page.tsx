@@ -1,11 +1,9 @@
 "use client"
 
-import { redirect } from "next/navigation"
+import LandingPage from "../components/landing-page"
+import Link from 'next/link';
 
-export default function HomePage() {
-  redirect("/login")
-  
-  // This won't render, but is needed to satisfy TypeScript
-  return null
+export default function Home() {
+  return <LandingPage />
 }
 
