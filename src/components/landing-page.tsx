@@ -180,37 +180,6 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
-
-      {/* Testimonial Section */}
-      <section className="py-20 bg-gradient-to-b from-background to-purple-950/20">
-        <div className="container mx-auto px-4 text-center relative">
-          <div className="absolute inset-0 overflow-hidden opacity-10">
-            <div className="absolute top-0 left-1/4 w-1/2 h-full bg-gradient-radial from-purple-500/20 to-transparent"></div>
-          </div>
-          
-          <div className="relative">
-            <h2 className="text-3xl font-bold mb-10 gradient-text">What Our Customers Say</h2>
-
-            <div className="max-w-3xl mx-auto">
-              <div className="p-8 rounded-2xl bg-secondary/30 backdrop-blur-sm border border-purple-500/10 shadow-ai-glow">
-                <blockquote className="text-xl italic mb-6 text-foreground/90">
-                  "CaterlyAI has transformed our business. We've seen a 40% increase in corporate bookings since we started
-                  using the platform. The AI-generated leads are incredibly accurate!"
-                </blockquote>
-                <div className="flex items-center justify-center">
-                  <div className="w-12 h-12 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold">
-                    SJ
-                  </div>
-                  <div className="ml-4 text-left">
-                    <p className="font-semibold text-foreground">Sarah Johnson</p>
-                    <p className="text-sm text-muted-foreground">Gourmet Delights Catering</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
     </div>
   )
 }
