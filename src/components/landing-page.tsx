@@ -137,8 +137,8 @@ export default function LandingPage() {
                   <span className="text-purple-700 text-xl font-bold">1</span>
                 </div>
                 <h3 className="text-xl font-semibold mb-2 text-foreground">Your Digital Mise en Place</h3>
-                <p className="text-muted-foreground font-semibold mb-2">
-                  "Prep once. Impress endlessly."
+                <p className="text-muted-foreground font-semibold text-xl mb-2">
+                  Prep once. Impress endlessly.
                 </p>
                 <p className="text-foreground/80">
                   We build your AI-powered brand kit—think of it as your marketing mise en place. From optimized business descriptions to customized social media images and posts, we ensure your catering business is dressed to impress, automatically.
@@ -153,8 +153,8 @@ export default function LandingPage() {
                   <span className="text-blue-700 text-xl font-bold">2</span>
                 </div>
                 <h3 className="text-xl font-semibold mb-2 text-foreground">Start Your Lead Engine <span className="sparkle-subtle"></span></h3>
-                <p className="text-muted-foreground font-semibold mb-2">
-                  "Fuel your pipeline with AI precision."
+                <p className="text-muted-foreground font-semibold text-xl mb-2">
+                  Fuel your pipeline with AI precision.
                 </p>
                 <p className="text-foreground/80">
                   Our system hunts for high-potential catering leads in your area—pulling names, emails, phone numbers, and key business insights directly from the web. Each lead comes enriched and ready to go, complete with a unique company profile and contact strategy.
@@ -169,8 +169,8 @@ export default function LandingPage() {
                   <span className="text-pink-700 text-xl font-bold">3</span>
                 </div>
                 <h3 className="text-xl font-semibold mb-2 text-foreground">Marketing While You Sleep</h3>
-                <p className="text-muted-foreground font-semibold mb-2">
-                  "Get a text when it's time to book the event."
+                <p className="text-muted-foreground font-semibold text-xl mb-2">
+                  Get a text when it's time to book the event.
                 </p>
                 <p className="text-foreground/80">
                   Your 12-week campaign? Handled. AI-generated emails are crafted, scheduled, and sent on autopilot. As soon as a lead is ready to talk, you'll get a real-time text alert—so you can focus on booking, not chasing.
