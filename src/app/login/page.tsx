@@ -15,7 +15,7 @@ export default function LoginPage() {
         <div className="mb-8 relative w-full overflow-hidden" style={{ paddingBottom: '56.25%' }}>
           <iframe
             className="absolute top-0 left-0 w-full h-full rounded-lg"
-            src="https://www.youtube.com/embed/BxlOxrDLV_4"
+            src="https://www.youtube.com/embed/FS1Ni87acA0"
             title="Catering AI Demo"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
